@@ -30,7 +30,7 @@ def _load_episode_frames(source: str | None, target: str | None):
     """Return a dict episode_id -> Episode for showing frames, or {} if no source."""
     if not source or not target:
         return {}
-    from .adapters import build_source
+    from robovid_conditioner.adapters import build_source
 
     try:
         src = build_source(source, target)
@@ -57,8 +57,8 @@ def _linspace(a: int, b: int, n: int) -> list[float]:
 def run() -> None:  # pragma: no cover - exercised interactively, not in CI
     import streamlit as st
 
-    from .gold import load_or_sync_gold, update_episode_review
-    from .reliability import reliability_report
+    from robovid_conditioner.gold import load_or_sync_gold, update_episode_review
+    from robovid_conditioner.reliability import reliability_report
 
     args = _parse_args()
     st.set_page_config(page_title="robovid_conditioner review", layout="wide")

@@ -4,6 +4,12 @@
 
 VLM labels are wrong often enough that you need to know how wrong; this tool measures it. The honest claim here is not "good labels." It is **labels + measurement + a fixing loop**.
 
+![What robovid_conditioner adds to one raw LeRobot episode: subtask boundaries, an episode quality/mistake judgment, and subgoal keyframes.](docs/figures/annotation_overview.png)
+
+*One real SO-101 episode, labeled by Gemini 2.5 Flash: the filmstrip is the raw video; the numbered bar is the subtask segmentation; ▼ marks each subgoal keyframe; the chip is the quality/mistake judgment. That is everything the tool adds — and then it measures how much a human disagrees with it.*
+
+![Pipeline: LeRobot episode → annotate with your VLM → subtasks · quality · subgoals → review/calibrate → measured reliability.](docs/figures/pipeline.png)
+
 ---
 
 ## 60-second quickstart

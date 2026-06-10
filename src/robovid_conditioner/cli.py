@@ -74,6 +74,10 @@ def _annotate(args) -> int:
     kwargs: dict = {}
     if args.source == "lerobot" and args.camera_key:
         kwargs["camera_key"] = args.camera_key
+    if args.source == "lerobot" and args.limit:
+        # Only fetch the episodes we will annotate (avoids downloading the whole
+        # dataset's videos when --limit is small).
+        kwargs["episodes"] = list(range(args.limit))
     if args.source == "directory":
         kwargs["fps"] = args.fps
     source = build_source(args.source, args.target, **kwargs)
