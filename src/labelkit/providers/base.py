@@ -16,7 +16,6 @@ import base64
 import io
 import json
 import os
-import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -134,7 +133,7 @@ def build_provider(name: str | None = None, model: str | None = None) -> VLMProv
 def make_contact_sheet(frames: list[np.ndarray], frame_labels: list[int], thumb_width: int = 224) -> Image.Image:
     """Tile keyframes into a labeled contact sheet for a single VLM call."""
     images: list[Image.Image] = []
-    for frame, label in zip(frames, frame_labels):
+    for frame, label in zip(frames, frame_labels, strict=False):
         img = Image.fromarray(np.asarray(frame).astype("uint8")).convert("RGB")
         ratio = thumb_width / img.width
         img = img.resize((thumb_width, max(1, int(img.height * ratio))))

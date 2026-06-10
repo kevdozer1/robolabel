@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-authors = [{ name = "Kevin" }]
+authors = [{ name = "kevdozer1" }]
 keywords = ["lerobot", "robotics", "vlm", "annotation", "labeling", "vla", "calibration"]
 classifiers = [
     "Development Status :: 4 - Beta",

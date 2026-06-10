@@ -28,7 +28,7 @@ def test_validate_segments_makes_contiguous_full_coverage():
     assert segs[0].start_frame == 0
     assert segs[-1].end_frame == 19
     # contiguous, non-overlapping
-    for prev, nxt in zip(segs, segs[1:]):
+    for prev, nxt in zip(segs, segs[1:], strict=False):
         assert nxt.start_frame == prev.end_frame + 1
 
 

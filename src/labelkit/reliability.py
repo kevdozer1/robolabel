@@ -42,7 +42,7 @@ def reliability_report(gold_path: str | Path) -> dict[str, Any]:
             reviewed += 1
 
         ep_ious = [
-            iou for iou in (_temporal_iou(a, g) for a, g in zip(auto_subtasks, gold_subtasks)) if iou is not None
+            iou for iou in (_temporal_iou(a, g) for a, g in zip(auto_subtasks, gold_subtasks, strict=False)) if iou is not None
         ]
         boundary_ious.extend(ep_ious)
 

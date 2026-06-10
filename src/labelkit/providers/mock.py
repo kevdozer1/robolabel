@@ -66,7 +66,7 @@ def _mock_answer(question: str, last_frame: int) -> str:
                     {"segment_idx": i, "start_step": s, "end_step": e,
                      "subtask_text": txt}
                     for i, ((s, e), txt) in enumerate(
-                        zip(thirds, ["approach and grasp object", "carry object to destination", "place object"])
+                        zip(thirds, ["approach and grasp object", "carry object to destination", "place object"], strict=False)
                     )
                 ]
             }

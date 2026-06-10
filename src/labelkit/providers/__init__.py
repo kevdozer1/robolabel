@@ -7,6 +7,8 @@ one by name.
 
 from __future__ import annotations
 
+# Always-available providers self-register on import.
+from . import gemini, mock, openai  # noqa: E402,F401
 from .base import (
     MissingCredentialError,
     ProviderResponse,
@@ -18,9 +20,6 @@ from .base import (
     register_provider,
     try_extract_json,
 )
-
-# Always-available providers self-register on import.
-from . import mock, gemini, openai  # noqa: E402,F401
 
 # Qwen registers only if the module imports (the heavy deps are deferred to
 # construction, so this import is cheap and safe even without the extra).

@@ -53,7 +53,7 @@ def validate_segments(raw: object, num_frames: int, min_seg: int, max_seg: int) 
     last = max(0, num_frames - 1)
     clean: list[SubtaskSegment] = []
     cursor = 0
-    for idx, item in enumerate(items[:max_seg]):
+    for item in items[:max_seg]:
         if not isinstance(item, dict):
             continue
         text = str(item.get("subtask_text") or item.get("text") or item.get("description") or "").strip()
