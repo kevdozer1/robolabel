@@ -6,6 +6,7 @@ Credential: ``GEMINI_API_KEY`` (or ``GOOGLE_API_KEY``). Default model
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from pathlib import Path
@@ -39,10 +40,12 @@ _PRICES = {
 class GeminiProvider(VLMProvider):
     name = "gemini"
 
-    def __init__(self, model: str | None = None, timeout_seconds: float = 120.0, max_retries: int = 6):
+    def __init__(self, model: str | None = None, timeout_seconds: float = 120.0, max_retries: int = 8,
+                 use_cache: bool = True):
         super().__init__(model=model or os.environ.get("ROBOVID_MODEL") or DEFAULT_MODEL)
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
+        self.use_cache = use_cache
         self.api_key = load_secret(["GEMINI_API_KEY", "GOOGLE_API_KEY"], "Gemini")
 
     def ask(
@@ -52,6 +55,9 @@ class GeminiProvider(VLMProvider):
         question: str,
         receipt_path: Path,
     ) -> ProviderResponse:
+        cached = self._cached(receipt_path) if self.use_cache else None
+        if cached is not None:
+            return cached
         image_data = image_to_data_url(make_contact_sheet(frames, frame_labels)).split(",", 1)[1]
         endpoint = GENERATE_URL.format(model=self.model)
         payload = {
@@ -78,7 +84,7 @@ class GeminiProvider(VLMProvider):
                 receipt["attempts"].append({"attempt": attempt + 1, "status_code": response.status_code})
                 if response.status_code not in _RETRY_STATUS or attempt >= self.max_retries:
                     break
-                time.sleep(min(2.0 ** attempt, 12.0))
+                time.sleep(min(2.0 ** attempt, 20.0))
             elapsed = time.perf_counter() - t0
             receipt["status_code"] = response.status_code
             receipt["elapsed_seconds"] = elapsed
@@ -95,6 +101,31 @@ class GeminiProvider(VLMProvider):
             )
         finally:
             write_receipt(receipt_path, receipt)
+
+
+    def _cached(self, receipt_path: Path) -> ProviderResponse | None:
+        """Reuse a prior successful receipt at this path (free resume).
+
+        A receipt is reused only if it was a 200 for the same model and parses to
+        non-empty text. This makes re-running after a partial/failed run skip the
+        episodes that already succeeded instead of paying for them again.
+        """
+        if not receipt_path.exists():
+            return None
+        try:
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if receipt.get("model") != self.model or int(receipt.get("status_code") or 0) != 200:
+            return None
+        data = receipt.get("response_json")
+        if not isinstance(data, dict):
+            return None
+        answer = _extract_text(data)
+        if not answer.strip():
+            return None
+        receipt["cache_hit"] = True
+        return ProviderResponse(answer, receipt, self.name, self.model, 0.0, _estimate_cost(data, self.model))
 
 
 def _extract_text(data: dict[str, Any]) -> str:
