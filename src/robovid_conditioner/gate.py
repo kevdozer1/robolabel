@@ -23,12 +23,30 @@ from .schema import episode_records, list_episode_ids, read_annotations
 
 _SUCCESS_WORDS = {"success", "successfully", "completed", "clean", "placed", "resting", "inside"}
 _FAILURE_WORDS = {"fail", "failed", "failing", "unfinished", "wrong", "incomplete", "mistake", "incorrect", "drop"}
+# Tokens that are NOT objects: manipulation action verbs, robot self-parts,
+# colors, and connectives. Object-grounding only flags tokens outside this set,
+# so it must be generous about verbs to avoid false positives like
+# "'reach' not in observation". Extend it for your task family as needed.
 _STOP = {
-    "after", "approach", "across", "above", "and", "before", "beside", "black", "blue", "carry", "clear",
-    "destination", "edge", "empty", "finish", "from", "green", "grasp", "gray", "grey", "leave", "lift",
-    "grasping", "metal", "move", "object", "orange", "partial", "place", "placing", "pink", "pickup",
-    "purple", "red", "release", "retract", "settle", "silver", "sink", "task", "that", "the", "toward",
-    "white", "withdraw", "with", "yellow", "into", "onto", "over",
+    # connectives / determiners
+    "after", "across", "above", "and", "before", "beside", "from", "into", "onto", "over", "that",
+    "the", "toward", "towards", "with", "without", "then", "while", "back", "down",
+    # action verbs (manipulation)
+    "approach", "approaches", "align", "aligns", "ascend", "bring", "brings", "carry", "carries",
+    "complete", "completes", "completed", "descend", "drop", "drops", "finish", "finishes", "grasp",
+    "grasps", "grasping", "grip", "grips", "hold", "holds", "hover", "hovers", "insert", "inserts",
+    "leave", "lift", "lifts", "lower", "lowers", "lowered", "move", "moves", "moving", "pick", "picks",
+    "pickup", "place", "places", "placing", "position", "positions", "positioned", "pull", "pulls",
+    "push", "pushes", "raise", "raises", "raised", "reach", "reaches", "reaching", "relocate",
+    "relocates", "release", "releases", "retract", "retracts", "retreat", "retreats", "return",
+    "returns", "rotate", "rotates", "scoop", "set", "sets", "settle", "slide", "slides", "stabilize",
+    "stabilizes", "steady", "transport", "transports", "transporting", "turn", "turns", "withdraw",
+    # robot self-parts (not objects to ground)
+    "arm", "gripper", "robot", "hand", "effector", "manipulator", "wrist", "claw",
+    # generic / colors / materials
+    "clear", "destination", "edge", "empty", "object", "objects", "partial", "task", "target",
+    "black", "blue", "green", "gray", "grey", "metal", "orange", "pink", "purple", "red", "silver",
+    "sink", "white", "yellow",
 }
 
 

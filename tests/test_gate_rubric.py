@@ -2,9 +2,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from robovid_conditioner.gate import run_gate
+from robovid_conditioner.gate import _object_tokens, run_gate
 from robovid_conditioner.rubric import load_rubric
 from robovid_conditioner.schema import EpisodeAnnotation, EpisodeMetadata, SubtaskSegment, write_annotations
+
+
+def test_object_grounding_ignores_action_verbs_and_robot_parts():
+    # Dogfood regression: real Gemini SO-101 labels flagged verbs like "reach",
+    # "transport", "retreat", "complete" and the robot's "arm" as ungrounded
+    # "objects". Only genuine object nouns should survive _object_tokens.
+    tokens = _object_tokens("transport the pink lego brick then retreat the arm and complete the task")
+    assert "lego" in tokens and "brick" in tokens
+    for verb in ("transport", "retreat", "complete", "reach", "retract", "arm", "task"):
+        assert verb not in tokens
 
 
 def test_rubric_fill_preserves_json_braces():
