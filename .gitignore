@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Secrets — never commit credentials
+.secrets/
+.env
+*.key
+
+# labelkit outputs (annotations, extracted frames, receipts, gold sets)
+*.annotations/
+annotations.parquet
+human_annotations.parquet
+raw_receipts/
+subgoal_frames/
+demo_out/
+
+# OS
+.DS_Store
