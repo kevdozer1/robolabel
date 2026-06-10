@@ -161,3 +161,62 @@ def episode_records(df: pd.DataFrame, episode_id: str) -> dict[str, Any]:
 
 def list_episode_ids(df: pd.DataFrame) -> list[str]:
     return [str(x) for x in df["episode_id"].drop_duplicates().tolist()]
+
+
+def export_jsonl(annotations_dir: str | Path, out_path: str | Path) -> Path:
+    """Export the sidecar as one consolidated JSON object per episode (JSONL).
+
+    A portable, human-readable view: each line is an episode with its metadata,
+    ordered subtasks, and subgoal frames. Round-trippable into other tools without
+    a parquet reader.
+    """
+    import json
+
+    df = read_annotations(annotations_dir)
+    out = Path(out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    lines: list[str] = []
+    for episode_id in list_episode_ids(df):
+        rec = episode_records(df, episode_id)
+        meta = rec["metadata"]
+        record = {
+            "episode_id": episode_id,
+            "task": rec["task"],
+            "num_frames": rec["num_frames"],
+            "metadata": {
+                "quality": _opt_int(meta.get("quality")),
+                "task_success_quality": _opt_int(meta.get("task_success_quality")),
+                "mistake": _opt_bool(meta.get("mistake")),
+                "boundary_clarity": meta.get("boundary_clarity"),
+                "control_mode": meta.get("control_mode"),
+                "reason": meta.get("reason"),
+            },
+            "subtasks": [
+                {"segment_idx": _opt_int(s["segment_idx"]), "start_frame": _opt_int(s["start_frame"]),
+                 "end_frame": _opt_int(s["end_frame"]), "subtask_text": s["subtask_text"]}
+                for s in rec["subtasks"]
+            ],
+            "subgoals": [
+                {"segment_idx": _opt_int(s["segment_idx"]), "frame_idx": _opt_int(s["subgoal_frame_idx"]),
+                 "image_path": s["subgoal_image_path"]}
+                for s in rec["subgoals"]
+            ],
+        }
+        lines.append(json.dumps(record, sort_keys=True))
+    out.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+    return out
+
+
+def _opt_int(value: Any) -> int | None:
+    try:
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _opt_bool(value: Any) -> bool | None:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    return bool(value)
