@@ -1,0 +1,95 @@
+# labelkit default rubric.
+#
+# This is the single source of truth for prompts, score definitions, and gate
+# thresholds. It was tuned on tabletop pick-and-place teleoperation (the BridgeData
+# V2 / SO-10x family). To adapt it to a new task family, copy this file, edit the
+# prompts and the quality scale, and pass `--rubric your_rubric.yaml`. Nothing
+# scoring-related is hardcoded in the Python.
+
+schema_version: labelkit/rubric/v1
+name: tabletop_pick_and_place
+description: >
+  Pi0.7-style conditioning annotations for short tabletop manipulation episodes:
+  2-5 temporally-ordered subtasks, an episode quality/mistake judgment, and a
+  subgoal keyframe per subtask.
+
+# Number of evenly-spaced keyframes sampled into the contact sheet per VLM call.
+keyframes: 6
+
+subtasks:
+  min_segments: 2
+  max_segments: 5
+  # Stage one: elicit only physical evidence, no labels yet.
+  observe_prompt: |
+    You are observing a robot manipulation episode before assigning labels.
+    Task: {task}
+    The episode has frames 0 through {last_frame}; the contact sheet shows
+    evenly-spaced keyframes with their frame numbers.
+    Describe ONLY physical evidence: visible objects, gripper open/closed state,
+    arm motion, and likely contact or release moments. Do not decide subtask
+    labels yet.
+    Return ONLY valid JSON:
+    {"observations":[{"objects":["object","destination"],"gripper":"evidence","motion":"evidence","summary":"physical observation"}],"episode_summary":"one physical summary"}
+  # Stage two: produce the ordered subtasks, grounded in the observations.
+  label_prompt: |
+    Segment this robot manipulation episode into {min_segments} to {max_segments}
+    temporally-ordered subtasks.
+    Task: {task}
+    The episode has frames 0 through {last_frame}.
+    Stage-one physical observations:
+    {observations}
+    Each subtask needs start_step, end_step (frame indices in [0,{last_frame}],
+    contiguous and non-overlapping, covering the whole episode), and a short
+    subtask_text naming the visible action and the object/destination when possible
+    (e.g. "grasp the red block", "place block in bowl").
+    Do not repeat the same subtask_text. Do not use removal/reversal language
+    unless the task itself asks for removal.
+    Return ONLY valid JSON:
+    {"segments":[{"segment_idx":0,"start_step":0,"end_step":3,"subtask_text":"short action phrase"}]}
+
+metadata:
+  # Quality is a 1-5 curation/training-usefulness score. Edit these definitions
+  # for your task family; the VLM is shown them verbatim.
+  quality_scale:
+    "1": "No useful target interaction is visible; not usable training data."
+    "2": "Weak or ambiguous interaction; wrong object or major failure."
+    "3": "Partial interaction; the manipulation cycle is incomplete or unclear."
+    "4": "Clear approach/grasp/transport/release boundaries; usable even if the final placement is imperfect."
+    "5": "Clean, unambiguous successful manipulation with clear boundaries."
+  observe_prompt: |
+    You are observing a robot demonstration before rating it.
+    Task: {task}
+    Episode length: {num_frames} frames.
+    Describe physical evidence only: visible objects, approach, grasp/contact,
+    transport, release/state-change, whether the requested task appears completed,
+    and any visible mistake.
+    Return ONLY valid JSON:
+    {"objects":["object","destination"],"boundary_evidence":"...","completion_evidence":"...","mistake_evidence":"...","summary":"..."}
+  label_prompt: |
+    Rate this robot demonstration from the keyframes and the task instruction.
+    Task: {task}
+    Episode length: {num_frames} frames.
+    Quality scale (1-5):
+    {quality_scale}
+    Physical observations:
+    {observations}
+    task_success_quality measures whether the requested task was completed.
+    curation_quality measures training usefulness (visible approach/grasp/contact/
+    transport/release boundaries). They can differ. Set mistake=true for a clear
+    wrong object, failed grasp, wrong destination, or unfinished task.
+    Return ONLY valid JSON:
+    {"task_success_quality":3,"curation_quality":4,"mistake":false,"boundary_clarity":"clear","reason":"specific evidence consistent with both scores"}
+
+subgoals:
+  # Where the subgoal keyframe for each subtask comes from. "subtask_end" uses the
+  # last frame of each subtask segment (the achieved sub-state).
+  source: subtask_end
+
+gate:
+  # A collapsed score distribution (e.g. every episode scored 5) is a red flag that
+  # the VLM is not discriminating. Flag when distinct quality scores are too few.
+  min_distinct_quality_scores: 2
+  min_episodes_for_dispersion: 8
+  flag_repeated_subtask_text: true
+  flag_object_grounding: true
+  flag_score_reason_contradiction: true

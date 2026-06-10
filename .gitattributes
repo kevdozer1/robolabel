@@ -1,0 +1,8 @@
+# Linux/macOS-first project: store text files with LF line endings.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.parquet binary
+*.mp4 binary
+*.npy binary
