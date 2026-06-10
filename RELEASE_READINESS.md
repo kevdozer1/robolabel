@@ -29,11 +29,15 @@ smoke-tested, what is missing, and what to fix first.
 - **Calibration.** Gold sets keep human labels in a separate block from VLM labels
   and never overwrite either side (tested). Reliability metrics (subtask boundary
   temporal IoU, quality exact / within-one, subgoal frame agreement) tested.
-- **Streamlit review GUI.** Renders and round-trips through a real edit→save via a
-  Streamlit `AppTest` that runs the actual module the way `streamlit run` does
-  (`tests/test_review_app.py`), and the test runs in CI (review extra installed).
-  This is the regression test for the relative-import crash that broke the GUI on
-  first open during this dogfood pass.
+- **Browser review GUI.** A stdlib `http.server` single-page app (no Streamlit)
+  that plays the clip, scrubs frame by frame, highlights the active subtask with
+  the playhead, and sets a subtask boundary / subgoal frame from the current
+  frame. Frames are served as exact per-index JPEGs from the adapter (works for
+  LeRobot too). Tested via the `ReviewSession` data layer and a real HTTP
+  round-trip (`tests/test_review_server.py`, runs in CI with core deps), and
+  verified live on the 50-episode SO-101 run (50 episodes, real frames served in
+  ~0.05 s each). Human edits land in the gold block; the VLM auto labels are
+  never touched.
 - **Gate.** Collapsed-score, repeated-text, object-grounding, and score↔reason
   contradiction flags, thresholds from the rubric. Tested.
 - **Quality bar.** `ruff` clean; 30 tests pass on Python 3.10; CI matrix 3.10/3.12.

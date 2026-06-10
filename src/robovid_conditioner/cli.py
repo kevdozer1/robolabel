@@ -35,12 +35,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--fps", type=float, default=10.0, help="Directory adapter default fps.")
     p.add_argument("--no-images", action="store_true", help="Do not extract subgoal frame images.")
 
-    p = sub.add_parser("review", help="Open the Streamlit calibration GUI.")
+    p = sub.add_parser("review", help="Open the browser calibration GUI (watch + scrub + correct).")
     p.add_argument("--annotations", required=True)
     p.add_argument("--gold", required=True)
-    p.add_argument("--source", choices=["lerobot", "directory"], default=None, help="To show clip frames.")
+    p.add_argument("--source", choices=["lerobot", "directory"], default=None,
+                   help="Show clip frames (scrubber). Without it you can still edit labels.")
     p.add_argument("--target", default=None)
-    p.add_argument("--port", type=int, default=8501)
+    p.add_argument("--port", type=int, default=8787)
+    p.add_argument("--no-browser", action="store_true")
 
     p = sub.add_parser("reliability", help="VLM-vs-human agreement from a gold file.")
     p.add_argument("--gold", required=True)
@@ -105,19 +107,11 @@ def _annotate(args) -> int:
 
 
 def _review(args) -> int:
-    import subprocess
+    from .review_server import build_session, serve
 
-    app = Path(__file__).with_name("review_app.py")
-    cmd = [sys.executable, "-m", "streamlit", "run", str(app), "--server.port", str(args.port), "--",
-           "--annotations", args.annotations, "--gold", args.gold]
-    if args.source and args.target:
-        cmd += ["--source", args.source, "--target", args.target]
-    try:
-        return subprocess.call(cmd)
-    except FileNotFoundError:
-        print("Streamlit is not installed. Install the review extra: pip install 'robovid_conditioner[review]'.",
-              file=sys.stderr)
-        return 2
+    session = build_session(args.annotations, args.gold, args.source, args.target)
+    serve(session, host="127.0.0.1", port=args.port, open_browser=not getattr(args, "no_browser", False))
+    return 0
 
 
 def _reliability(args) -> int:

@@ -72,10 +72,17 @@ the VLM was from you:
 robovid_conditioner review \
   --annotations so101_annotations \
   --gold so101_gold.json \
-  --source lerobot --target lerobot/svla_so101_pickplace      # shows clip frames
+  --source lerobot --target lerobot/svla_so101_pickplace      # opens a browser
 
 robovid_conditioner reliability --gold so101_gold.json --json so101_reliability.json
 ```
+
+`review` opens a local browser GUI: play or scrub the clip frame by frame (slider,
+←/→ for single frames, space to play), watch the active subtask highlight follow
+the playhead, set your quality score, and — when a boundary is wrong — scrub to the
+transition and click "set end = current frame" (or "use current frame" for a
+subgoal). `--source/--target` is what makes the frames appear; without it you can
+still edit the numbers.
 
 `reliability` prints subtask-boundary temporal IoU, quality exact / within-one
 agreement, and subgoal frame agreement over the episodes you reviewed. Your VLM

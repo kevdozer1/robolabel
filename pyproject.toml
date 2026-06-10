@@ -31,9 +31,8 @@ dependencies = [
 
 [project.optional-dependencies]
 # Read LeRobot datasets (HF hub id or local path). Pinned; see README "Compatibility".
+# Also what the browser review GUI needs to show clip frames.
 lerobot = ["lerobot>=0.1.0"]
-# Streamlit calibration GUI (`robovid_conditioner review`).
-review = ["streamlit>=1.30"]
 # Local Qwen2.5-VL provider (heavy; GPU recommended).
 qwen = ["torch>=2.1", "transformers>=4.45", "accelerate>=0.30", "qwen-vl-utils>=0.0.8"]
 dev = ["pytest>=7.4", "ruff>=0.4"]

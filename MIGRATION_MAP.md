@@ -26,7 +26,7 @@ src/robovid_conditioner/
   reliability.py        # temporal IoU, exact/within-one agreement, subgoal agreement
   gate.py               # quality gate (collapsed scores, repeated text, contradictions)
   gold.py               # gold set create/merge/update — human labels kept separate from VLM
-  review_app.py         # Streamlit review GUI
+  review_server.py      # browser http.server calibration GUI (watch + frame-scrub + correct)
   cost.py               # cost aggregation from per-call receipts
   cli.py                # robovid_conditioner annotate|review|reliability|gate|export|cost|demo
   demo.py               # synthetic-episode generation + fully offline end-to-end demo
@@ -44,7 +44,7 @@ src/robovid_conditioner/
 | `bridgeengine/goldset.py` (`reliability_report`, `_temporal_iou`, agreement means) | `reliability.py` | Temporal-IoU + exact/within-one + subgoal-agreement metrics are the measurement half of the thesis; re-sourced from the parquet sidecar instead of snapshot parquet. |
 | `bridgeengine/goldset.py` (`write_gold_template`) + `bridgeengine/calibration.py` (`update_episode_review`, merge logic) | `gold.py` | Gold-set create/merge/update keeps human labels strictly separate from VLM labels — the product's non-overwrite rule. |
 | `bridgeengine/quality_gate.py` (`_check_subtasks`, `_check_metadata`, score-dispersion, `_has_unnegated_word`) | `gate.py` | Collapsed-score / repeated-text / contradiction checks are the "gate"; thresholds moved into `rubric.yaml`. |
-| `bridgeengine/review_gui.py` (Streamlit data flow only) | `review_app.py` | The calibration GUI is a required surface; re-authored small against adapter output (the 1232-line research GUI is not copied verbatim). |
+| `bridgeengine/review_gui.py` (the http.server single-page review app) | `review_server.py` | The calibration GUI is the surface the user lives in, so its real interaction model — a stdlib `http.server` SPA where you watch the clip, scrub frame by frame, and set a subtask boundary / subgoal *from the current frame* — was ported faithfully (not the earlier stripped contact-sheet). De-BridgeData'd: frames come from the adapter (served as exact per-index JPEGs, so it works for LeRobot too), labels from the parquet + gold layer. No Streamlit dependency. |
 | `bridgeengine/labelers/base.py` (`sha256_file`, JSON helpers, `LabelResult` idea) | `schema.py` / `providers/base.py` | Provenance helpers are reused; `LabelResult` is replaced by parquet rows. |
 | `ANNOTATION_RUBRIC.md` (score rubric prose) | `rubric.yaml` + `SCHEMA.md` | The rubric becomes machine-readable config + documentation, not prose buried in a markdown file. |
 
@@ -70,6 +70,6 @@ src/robovid_conditioner/
 
 ## Provenance / license flags
 
-- All ported code is re-authored from a single-author private repo owned by the same author publishing `robovid_conditioner`; no third-party copied code is carried over. Dependencies (`pillow`, `pandas`, `pyarrow`, `requests`, `pyyaml`, `numpy`, `streamlit`, `lerobot`) are used through their public APIs, not vendored.
+- All ported code is re-authored from a single-author private repo owned by the same author publishing `robovid_conditioner`; no third-party copied code is carried over. Dependencies (`pillow`, `pandas`, `pyarrow`, `requests`, `pyyaml`, `numpy`, `lerobot`) are used through their public APIs, not vendored; the review GUI is stdlib `http.server` only.
 - License: Apache-2.0 (see `LICENSE`).
 - **Open flag:** `lerobot` is GPL-touching in some optional extras; `robovid_conditioner` depends on it only through the public `LeRobotDataset` read API and pins the version in the README. Confirm the pinned `lerobot` license is compatible with redistribution before tagging 1.0.

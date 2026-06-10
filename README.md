@@ -64,7 +64,8 @@ A VLM that disagrees with a human on more than half the quality scores, and pick
 the "right" subgoal frame about a third of the time, is not a labeling oracle —
 it is a fast first pass that you must measure and correct. So robovid_conditioner ships the
 two things that turn a fast first pass into usable data: a **calibration loop**
-(`robovid_conditioner review`) where you confirm or fix labels, and a **reliability report**
+(`robovid_conditioner review` — a browser GUI where you watch each clip, scrub
+frame by frame, and set a boundary or subgoal from the current frame), and a **reliability report**
 (`robovid_conditioner reliability`) that tells you how far the VLM was from you on *your*
 data, in the same units (boundary IoU, score agreement, subgoal agreement).
 
