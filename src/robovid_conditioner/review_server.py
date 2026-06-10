@@ -51,8 +51,9 @@ class ReviewSession:
         if source is not None:
             self.episodes = {ep.episode_id: ep for ep in source}
         self._frame_cache: OrderedDict[tuple[str, int], bytes] = OrderedDict()
-        self._cache_cap = 600
+        self._cache_cap = 800
         self._lock = threading.Lock()
+        self._prefetch_token = 0
 
     # ---- state / payloads ------------------------------------------------ #
     def state(self) -> dict[str, Any]:
@@ -100,7 +101,7 @@ class ReviewSession:
             })
         num_frames = int(rec["num_frames"]) or (self.episodes[episode_id].num_frames if episode_id in self.episodes else 1)
         fps = float(self.episodes[episode_id].fps) if episode_id in self.episodes else 10.0
-        return {
+        payload = {
             "episode_id": episode_id,
             "task": rec["task"] or "",
             "num_frames": num_frames,
@@ -122,6 +123,31 @@ class ReviewSession:
             "prev_episode_id": self._neighbor(episode_id, -1),
             "next_episode_id": self._neighbor(episode_id, +1),
         }
+        self._start_prefetch(episode_id, num_frames)
+        return payload
+
+    def _start_prefetch(self, episode_id: str, num_frames: int) -> None:
+        """Warm the frame cache in the background (server-side, no browser flood).
+
+        Decodes the episode's frames sequentially into the cache so scrubbing and
+        playback hit warm cache. Cancels itself when a newer episode is opened.
+        """
+        if episode_id not in self.episodes:
+            return
+        with self._lock:
+            self._prefetch_token += 1
+            token = self._prefetch_token
+
+        def work() -> None:
+            for i in range(num_frames):
+                if token != self._prefetch_token:
+                    return  # a newer episode was opened
+                try:
+                    self.frame_jpeg(episode_id, i)
+                except Exception:  # noqa: BLE001 - prefetch is best-effort
+                    return
+
+        threading.Thread(target=work, daemon=True).start()
 
     def save_review(self, payload: dict[str, Any]) -> dict[str, Any]:
         episode_id = str(payload.get("episode_id"))
@@ -144,19 +170,24 @@ class ReviewSession:
         if episode_id not in self.episodes:
             return None
         key = (episode_id, int(idx))
+        # The whole decode is serialized: ThreadingHTTPServer handles each request
+        # in its own thread, but the underlying video decoder (pyav, via LeRobot)
+        # is NOT thread-safe — concurrent decodes return wrong/stuck frames. One
+        # lock around cache-lookup + decode keeps it correct (a decode is ~ms and
+        # results are cached, so a single reviewer scrubbing/playing is plenty fast).
         with self._lock:
-            if key in self._frame_cache:
+            cached = self._frame_cache.get(key)
+            if cached is not None:
                 self._frame_cache.move_to_end(key)
-                return self._frame_cache[key]
-        arr = self.episodes[episode_id].frame(int(idx))
-        buf = io.BytesIO()
-        Image.fromarray(arr).convert("RGB").save(buf, format="JPEG", quality=82)
-        data = buf.getvalue()
-        with self._lock:
+                return cached
+            arr = self.episodes[episode_id].frame(int(idx))
+            buf = io.BytesIO()
+            Image.fromarray(arr).convert("RGB").save(buf, format="JPEG", quality=82)
+            data = buf.getvalue()
             self._frame_cache[key] = data
             while len(self._frame_cache) > self._cache_cap:
                 self._frame_cache.popitem(last=False)
-        return data
+            return data
 
     # ---- helpers --------------------------------------------------------- #
     def _gold_entry(self, episode_id: str) -> dict[str, Any]:
@@ -382,7 +413,7 @@ function renderState(){document.getElementById('stats').innerHTML=
   b.innerHTML=`<div class="qid">${it.reviewed?'✓':'○'} ${it.episode_id}</div><div class="qtask">${esc(it.task)}</div><div class="qscore">${sc}</div>`;q.appendChild(b);}}
 async function load(id){stop();cur=id;E=await j('/api/episode/'+encodeURIComponent(id));renderState();
  document.getElementById('epid').textContent=E.episode_id;document.getElementById('task').textContent=E.task;
- const sl=document.getElementById('slider');sl.max=Math.max(0,E.num_frames-1);frame=0;sl.value=0;showFrame();preload();
+ const sl=document.getElementById('slider');sl.max=Math.max(0,E.num_frames-1);frame=0;sl.value=0;showFrame();
  document.getElementById('autoScore').textContent='Auto score: '+(E.review.auto_score??'n/a');
  document.getElementById('autoMistake').textContent='Auto mistake: '+(E.review.auto_mistake?'yes':'no');
  document.getElementById('mistake').checked=Boolean(E.review.gold_mistake??E.review.auto_mistake);
@@ -392,8 +423,6 @@ async function load(id){stop();cur=id;E=await j('/api/episode/'+encodeURICompone
 function showFrame(){if(!E.has_frames){document.getElementById('frame').alt='no --source given';return;}
  document.getElementById('frame').src=`/frame/${encodeURIComponent(E.episode_id)}/${frame}`;
  document.getElementById('fcount').textContent=`frame ${frame} / ${E.num_frames-1}`;highlight();}
-function preload(){if(!E.has_frames)return;const id=E.episode_id,n=E.num_frames;let i=0;
- const step=()=>{if(i>=n||E.episode_id!==id)return;const im=new Image();im.src=`/frame/${encodeURIComponent(id)}/${i}`;i++;setTimeout(step,8);};step();}
 function onScrub(){frame=Number(document.getElementById('slider').value);showFrame();}
 function togglePlay(){playing?stop():play();}
 function play(){if(!E||!E.has_frames)return;playing=true;document.getElementById('play').textContent='❚❚ Pause';
