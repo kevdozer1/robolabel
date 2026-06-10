@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from labelkit import review_app
-from labelkit.demo import synthetic_episode
+from robovid_conditioner import review_app
+from robovid_conditioner.demo import synthetic_episode
 
 
 def test_review_app_imports_without_streamlit():

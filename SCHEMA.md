@@ -1,19 +1,19 @@
 # Schema
 
-`labelkit` writes two artifacts: a VLM annotations sidecar (`annotations.parquet`)
+`robovid_conditioner` writes two artifacts: a VLM annotations sidecar (`annotations.parquet`)
 and, separately, a human gold file (`*.json`). They are never merged; VLM labels
 and human labels live in different files so neither can silently overwrite the
 other.
 
 ## `annotations.parquet` (VLM output)
 
-Schema version: **`labelkit/annotations/v1`** (stored in every row's
+Schema version: **`robovid_conditioner/annotations/v1`** (stored in every row's
 `schema_version` column; bump it on any breaking change). Long format — one row
 per record, three record types per episode.
 
 | column | type | record types | meaning |
 |---|---|---|---|
-| `schema_version` | str | all | `labelkit/annotations/v1` |
+| `schema_version` | str | all | `robovid_conditioner/annotations/v1` |
 | `source` | str | all | always `vlm` in this file |
 | `episode_id` | str | all | stable id from the adapter |
 | `task` | str? | all | task string if the dataset has one |
@@ -58,14 +58,14 @@ counts.
 
 ## Gold file (human labels)
 
-Schema version: **`labelkit/gold/v1`**. One JSON object with an `episodes` list.
+Schema version: **`robovid_conditioner/gold/v1`**. One JSON object with an `episodes` list.
 Each episode has an `auto` block (a snapshot of the VLM labels) and a `gold` block
 (what the human enters). `accept_auto` flags mean "the human confirms the VLM
 value here".
 
 ```json
 {
-  "schema_version": "labelkit/gold/v1",
+  "schema_version": "robovid_conditioner/gold/v1",
   "episodes": [{
     "episode_id": "0",
     "task": "pink lego brick into the transparent box",
@@ -88,5 +88,5 @@ agreement.
 
 Writing annotations back into a LeRobot dataset's own metadata is a planned
 capability, gated on the pinned LeRobot format supporting per-episode annotation
-fields cleanly. Until then, the parquet sidecar + `labelkit export` (JSONL) are
+fields cleanly. Until then, the parquet sidecar + `robovid_conditioner export` (JSONL) are
 the portable outputs. See `RELEASE_READINESS.md`.

@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "labelkit"
+name = "robovid_conditioner"
 version = "0.1.0"
 description = "Generate pi0.7-style conditioning annotations for LeRobot datasets with any VLM, plus a human calibration loop and measured reliability."
 readme = "README.md"
@@ -32,24 +32,24 @@ dependencies = [
 [project.optional-dependencies]
 # Read LeRobot datasets (HF hub id or local path). Pinned; see README "Compatibility".
 lerobot = ["lerobot>=0.1.0"]
-# Streamlit calibration GUI (`labelkit review`).
+# Streamlit calibration GUI (`robovid_conditioner review`).
 review = ["streamlit>=1.30"]
 # Local Qwen2.5-VL provider (heavy; GPU recommended).
 qwen = ["torch>=2.1", "transformers>=4.45", "accelerate>=0.30", "qwen-vl-utils>=0.0.8"]
 dev = ["pytest>=7.4", "ruff>=0.4"]
 
 [project.scripts]
-labelkit = "labelkit.cli:main"
+robovid_conditioner = "robovid_conditioner.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/kevdozer1/labelkit"
-"Technical report (does this help training?)" = "https://github.com/kevdozer1/labelkit/blob/main/docs/why.md"
+Homepage = "https://github.com/kevdozer1/robovid_conditioner"
+"Technical report (does this help training?)" = "https://github.com/kevdozer1/robovid_conditioner/blob/main/docs/why.md"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/labelkit"]
+packages = ["src/robovid_conditioner"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/labelkit", "README.md", "LICENSE", "SCHEMA.md"]
+include = ["src/robovid_conditioner", "README.md", "LICENSE", "SCHEMA.md"]
 
 [tool.ruff]
 line-length = 110

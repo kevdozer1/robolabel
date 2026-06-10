@@ -1,12 +1,12 @@
 """LeRobot dataset adapter.
 
 Reads a LeRobot dataset (Hugging Face hub id or local path) through the public
-``LeRobotDataset`` API and yields :class:`~labelkit.episode.Episode` objects.
+``LeRobotDataset`` API and yields :class:`~robovid_conditioner.episode.Episode` objects.
 
 Written against **lerobot 0.4.x** (``lerobot.datasets.lerobot_dataset``). The
 frame range of an episode comes from ``meta.episodes[ep_idx]`` (``dataset_from_index``
 / ``dataset_to_index``); a frame is fetched as ``dataset[abs_idx][camera_key]``.
-``lerobot`` is an optional dependency (``pip install 'labelkit[lerobot]'``);
+``lerobot`` is an optional dependency (``pip install 'robovid_conditioner[lerobot]'``);
 the import is deferred so this module loads without it.
 """
 
@@ -35,7 +35,7 @@ class LeRobotAdapter(EpisodeSource):
         except ImportError as exc:
             raise RuntimeError(
                 "The LeRobot adapter needs the 'lerobot' extra. Install it with "
-                "`pip install 'labelkit[lerobot]'`."
+                "`pip install 'robovid_conditioner[lerobot]'`."
             ) from exc
 
         self.repo_id = repo_id

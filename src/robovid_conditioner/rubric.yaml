@@ -1,4 +1,4 @@
-# labelkit default rubric.
+# robovid_conditioner default rubric.
 #
 # This is the single source of truth for prompts, score definitions, and gate
 # thresholds. It was tuned on tabletop pick-and-place teleoperation (the BridgeData
@@ -6,7 +6,7 @@
 # prompts and the quality scale, and pass `--rubric your_rubric.yaml`. Nothing
 # scoring-related is hardcoded in the Python.
 
-schema_version: labelkit/rubric/v1
+schema_version: robovid_conditioner/rubric/v1
 name: tabletop_pick_and_place
 description: >
   Pi0.7-style conditioning annotations for short tabletop manipulation episodes:

@@ -1,12 +1,12 @@
-"""Streamlit calibration GUI (``labelkit review``).
+"""Streamlit calibration GUI (``robovid_conditioner review``).
 
 Play a clip, see the VLM labels, edit the quality score / mistake / reason,
 accept or correct subtask boundaries, and mark subgoal frames. Edits are written
-to the gold file's ``gold`` block via :func:`labelkit.gold.update_episode_review`;
+to the gold file's ``gold`` block via :func:`robovid_conditioner.gold.update_episode_review`;
 the VLM ``auto`` block is never touched. A live reliability readout sits in the
 sidebar so you can watch agreement as you review.
 
-Run it with ``labelkit review --annotations <dir> --gold <file>`` (optionally
+Run it with ``robovid_conditioner review --annotations <dir> --gold <file>`` (optionally
 ``--source/--target`` to show real clip frames). Requires the ``review`` extra.
 """
 
@@ -61,8 +61,8 @@ def run() -> None:  # pragma: no cover - exercised interactively, not in CI
     from .reliability import reliability_report
 
     args = _parse_args()
-    st.set_page_config(page_title="labelkit review", layout="wide")
-    st.title("labelkit · human calibration")
+    st.set_page_config(page_title="robovid_conditioner review", layout="wide")
+    st.title("robovid_conditioner · human calibration")
 
     gold = load_or_sync_gold(args.annotations, args.gold)
     episodes = gold["episodes"]

@@ -5,7 +5,7 @@ smoke-tested, what is missing, and what to fix first.
 
 ## What works (tested)
 
-- **Core pipeline, offline.** `labelkit demo` runs end to end in ~1s with no API
+- **Core pipeline, offline.** `robovid_conditioner demo` runs end to end in ~1s with no API
   key (synthetic episodes → mock provider → valid `annotations.parquet` → gate).
   Covered by `tests/test_demo.py` and the CI integration step.
 - **Provider layer.** Two-stage observe→label flow, raw-response receipts,
@@ -37,13 +37,13 @@ smoke-tested, what is missing, and what to fix first.
   generate path is unrun here (needs GPU + the `qwen` extra).
 - **Streamlit review GUI.** Pure helpers are tested; the interactive app is not
   launched in CI. It has been written against the same gold data layer the tests
-  cover, but treat the UI as unproven until a human runs `labelkit review`.
+  cover, but treat the UI as unproven until a human runs `robovid_conditioner review`.
 - **mp4 DirectoryAdapter path.** Frame-directory mode is tested; the `imageio`/PyAV
   video path is written but unexercised by tests.
 
 ## Known gaps
 
-- **Name collision (blocking for PyPI).** The working name `labelkit` is **taken
+- **Name collision (blocking for PyPI).** The working name `robovid_conditioner` is **taken
   on PyPI** by an unrelated package. Do not publish under it. Available, checked
   alternatives: **`robolabel`** (PyPI free, no `robolabel/robolabel` GitHub org)
   and **`vlalabel`** (PyPI free); `calibrated-labels` is also free. Avoid
@@ -65,7 +65,7 @@ smoke-tested, what is missing, and what to fix first.
 
 ## First three issues to file
 
-1. **Rename the distribution off `labelkit` (PyPI collision).** Pick `robolabel`,
+1. **Rename the distribution off `robovid_conditioner` (PyPI collision).** Pick `robolabel`,
    update `pyproject.toml`/`[project.scripts]`/docs, add an import alias, and
    reserve the PyPI name. Blocking for any `pip install` story.
 2. **Add a recorded-fixture provider test for Gemini/OpenAI.** Capture one real

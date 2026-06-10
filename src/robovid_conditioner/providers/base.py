@@ -114,15 +114,15 @@ def available_providers() -> list[str]:
 
 
 def build_provider(name: str | None = None, model: str | None = None) -> VLMProvider:
-    """Construct a provider by name (defaults to ``$LABELKIT_PROVIDER`` or mock)."""
+    """Construct a provider by name (defaults to ``$ROBOVID_PROVIDER`` or mock)."""
     # Import side-effect: ensure built-in providers have registered themselves.
     from . import gemini, mock, openai  # noqa: F401
 
-    resolved = (name or os.environ.get("LABELKIT_PROVIDER") or "mock").strip().lower()
+    resolved = (name or os.environ.get("ROBOVID_PROVIDER") or "mock").strip().lower()
     if resolved not in _REGISTRY:
         raise ValueError(
             f"Unknown provider {resolved!r}. Available: {', '.join(available_providers())}. "
-            "Set --provider or $LABELKIT_PROVIDER."
+            "Set --provider or $ROBOVID_PROVIDER."
         )
     return _REGISTRY[resolved](model=model)  # type: ignore[call-arg]
 

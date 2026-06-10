@@ -1,7 +1,7 @@
 # Walkthrough: annotate a real LeRobot dataset
 
 This is the real-provider path, against a small public LeRobot dataset. The
-offline `labelkit demo` (mock provider) proves the plumbing; this proves the
+offline `robovid_conditioner demo` (mock provider) proves the plumbing; this proves the
 product on real robot video.
 
 ## Dataset
@@ -20,10 +20,10 @@ of derived annotations is fine). Verified with this tool:
 - Written and tested against **lerobot 0.4.4** (`lerobot.datasets.lerobot_dataset.LeRobotDataset`)
   and the **v3.0** LeRobot dataset metadata layout (episode rows carry
   `dataset_from_index` / `dataset_to_index`, and a per-episode `tasks` list).
-- Install the extra: `pip install 'labelkit[lerobot]'`.
+- Install the extra: `pip install 'robovid_conditioner[lerobot]'`.
 - The adapter reads frames lazily through the public dataset API. If a newer
   LeRobot changes the episode-index field names, the adapter is the one place to
-  update (`src/labelkit/adapters/lerobot.py`).
+  update (`src/robovid_conditioner/adapters/lerobot.py`).
 
 ## Annotate
 
@@ -37,7 +37,7 @@ export GEMINI_API_KEY=...        # or OPENAI_API_KEY for --provider openai
 Annotate the first 5 episodes with Gemini, using the `side` camera:
 
 ```bash
-labelkit annotate \
+robovid_conditioner annotate \
   --source lerobot \
   --target lerobot/svla_so101_pickplace \
   --provider gemini \
@@ -58,9 +58,9 @@ so101_annotations/
 Inspect what you got, and what it cost:
 
 ```bash
-labelkit gate   --annotations so101_annotations     # automatic red flags
-labelkit cost   --annotations so101_annotations     # estimated $ + raw receipt count
-labelkit export --annotations so101_annotations --out so101.jsonl
+robovid_conditioner gate   --annotations so101_annotations     # automatic red flags
+robovid_conditioner cost   --annotations so101_annotations     # estimated $ + raw receipt count
+robovid_conditioner export --annotations so101_annotations --out so101.jsonl
 ```
 
 ## Calibrate (the point of the tool)
@@ -69,12 +69,12 @@ Build a gold file and review a handful of episodes by hand, then measure how far
 the VLM was from you:
 
 ```bash
-labelkit review \
+robovid_conditioner review \
   --annotations so101_annotations \
   --gold so101_gold.json \
   --source lerobot --target lerobot/svla_so101_pickplace      # shows clip frames
 
-labelkit reliability --gold so101_gold.json --json so101_reliability.json
+robovid_conditioner reliability --gold so101_gold.json --json so101_reliability.json
 ```
 
 `reliability` prints subtask-boundary temporal IoU, quality exact / within-one
@@ -88,8 +88,8 @@ The default rubric was tuned on tabletop pick-and-place. For a different task
 family, copy the bundled rubric and edit the prompts and the quality scale:
 
 ```bash
-python -c "import labelkit, shutil, pathlib; \
-  shutil.copy(pathlib.Path(labelkit.__file__).parent / 'rubric.yaml', 'my_rubric.yaml')"
+python -c "import robovid_conditioner, shutil, pathlib; \
+  shutil.copy(pathlib.Path(robovid_conditioner.__file__).parent / 'rubric.yaml', 'my_rubric.yaml')"
 # edit my_rubric.yaml, then:
-labelkit annotate ... --rubric my_rubric.yaml
+robovid_conditioner annotate ... --rubric my_rubric.yaml
 ```

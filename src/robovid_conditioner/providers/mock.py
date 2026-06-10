@@ -1,6 +1,6 @@
 """Mock provider — offline, deterministic, and meaningless.
 
-It exists for CI and the offline ``labelkit demo`` only. Its "labels" are
+It exists for CI and the offline ``robovid_conditioner demo`` only. Its "labels" are
 structural placeholders that always parse; they describe nothing about the
 actual frames. Never use mock output as data, and never compute a reliability
 number against it and believe it.

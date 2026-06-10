@@ -1,4 +1,4 @@
-"""Local Qwen2.5-VL provider (optional extra ``labelkit[qwen]``).
+"""Local Qwen2.5-VL provider (optional extra ``robovid_conditioner[qwen]``).
 
 Runs a Qwen2.5-VL checkpoint locally via transformers — no API key, but heavy
 (GPU strongly recommended). The torch/transformers imports are deferred to
@@ -27,7 +27,7 @@ class QwenProvider(VLMProvider):
     name = "qwen"
 
     def __init__(self, model: str | None = None, max_new_tokens: int = 768):
-        super().__init__(model=model or os.environ.get("LABELKIT_MODEL") or DEFAULT_MODEL)
+        super().__init__(model=model or os.environ.get("ROBOVID_MODEL") or DEFAULT_MODEL)
         self.max_new_tokens = max_new_tokens
         try:
             import torch  # noqa: F401
@@ -35,7 +35,7 @@ class QwenProvider(VLMProvider):
         except ImportError as exc:  # pragma: no cover - exercised only without the extra
             raise RuntimeError(
                 "The local Qwen provider needs the 'qwen' extra. Install it with "
-                "`pip install 'labelkit[qwen]'` (torch + transformers + accelerate)."
+                "`pip install 'robovid_conditioner[qwen]'` (torch + transformers + accelerate)."
             ) from exc
         self._torch = __import__("torch")
         self._model = Qwen2_5_VLForConditionalGeneration.from_pretrained(

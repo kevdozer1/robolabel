@@ -1,7 +1,7 @@
 """Google Gemini provider (generateContent REST API).
 
 Credential: ``GEMINI_API_KEY`` (or ``GOOGLE_API_KEY``). Default model
-``gemini-2.5-flash``; override with ``--model`` or ``$LABELKIT_MODEL``.
+``gemini-2.5-flash``; override with ``--model`` or ``$ROBOVID_MODEL``.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ class GeminiProvider(VLMProvider):
     name = "gemini"
 
     def __init__(self, model: str | None = None, timeout_seconds: float = 120.0, max_retries: int = 6):
-        super().__init__(model=model or os.environ.get("LABELKIT_MODEL") or DEFAULT_MODEL)
+        super().__init__(model=model or os.environ.get("ROBOVID_MODEL") or DEFAULT_MODEL)
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
         self.api_key = load_secret(["GEMINI_API_KEY", "GOOGLE_API_KEY"], "Gemini")

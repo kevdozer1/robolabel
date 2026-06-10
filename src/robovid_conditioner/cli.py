@@ -1,12 +1,12 @@
-"""``labelkit`` command-line interface.
+"""``robovid_conditioner`` command-line interface.
 
-    labelkit annotate    run the VLM labelers over a dataset -> annotations.parquet
-    labelkit review      open the Streamlit calibration GUI (human labels)
-    labelkit reliability VLM-vs-human agreement report from a gold file
-    labelkit gate        automatic red-flag check on an annotation set
-    labelkit export      consolidated JSONL view of the sidecar
-    labelkit cost        cost / receipt accounting
-    labelkit demo        offline end-to-end demo (mock provider, no API key)
+    robovid_conditioner annotate    run the VLM labelers over a dataset -> annotations.parquet
+    robovid_conditioner review      open the Streamlit calibration GUI (human labels)
+    robovid_conditioner reliability VLM-vs-human agreement report from a gold file
+    robovid_conditioner gate        automatic red-flag check on an annotation set
+    robovid_conditioner export      consolidated JSONL view of the sidecar
+    robovid_conditioner cost        cost / receipt accounting
+    robovid_conditioner demo        offline end-to-end demo (mock provider, no API key)
 
 Heavy imports are deferred into each handler so unrelated subcommands stay light.
 """
@@ -20,7 +20,7 @@ from pathlib import Path
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="labelkit", description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog="robovid_conditioner", description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("annotate", help="Run the VLM labelers over a dataset.")
@@ -111,7 +111,7 @@ def _review(args) -> int:
     try:
         return subprocess.call(cmd)
     except FileNotFoundError:
-        print("Streamlit is not installed. Install the review extra: pip install 'labelkit[review]'.",
+        print("Streamlit is not installed. Install the review extra: pip install 'robovid_conditioner[review]'.",
               file=sys.stderr)
         return 2
 

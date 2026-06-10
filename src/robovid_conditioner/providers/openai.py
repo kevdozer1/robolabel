@@ -1,7 +1,7 @@
 """OpenAI provider (Responses API, multimodal).
 
 Credential: ``OPENAI_API_KEY``. Default model ``gpt-4o``; override with
-``--model`` or ``$LABELKIT_MODEL``. Token counts are stored raw in the receipt;
+``--model`` or ``$ROBOVID_MODEL``. Token counts are stored raw in the receipt;
 no dollar cost is asserted because per-model pricing changes frequently.
 """
 
@@ -33,7 +33,7 @@ class OpenAIProvider(VLMProvider):
     name = "openai"
 
     def __init__(self, model: str | None = None, timeout_seconds: float = 120.0):
-        super().__init__(model=model or os.environ.get("LABELKIT_MODEL") or DEFAULT_MODEL)
+        super().__init__(model=model or os.environ.get("ROBOVID_MODEL") or DEFAULT_MODEL)
         self.timeout_seconds = timeout_seconds
         self.api_key = load_secret(["OPENAI_API_KEY"], "OpenAI")
 

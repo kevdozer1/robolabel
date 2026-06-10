@@ -3,10 +3,10 @@
 This replaces the monorepo's content-addressed snapshot store. One long-format
 parquet holds three record types per episode — ``episode_metadata``, ``subtask``,
 and ``subgoal`` — keyed by ``episode_id``. The schema is documented in
-``SCHEMA.md`` and versioned by :data:`labelkit.SCHEMA_VERSION`.
+``SCHEMA.md`` and versioned by :data:`robovid_conditioner.SCHEMA_VERSION`.
 
 Human (calibration) labels are never written here; they live in a separate gold
-file (see :mod:`labelkit.gold`). This module only reads/writes VLM output.
+file (see :mod:`robovid_conditioner.gold`). This module only reads/writes VLM output.
 """
 
 from __future__ import annotations

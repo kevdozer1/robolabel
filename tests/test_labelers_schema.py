@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from labelkit.demo import synthetic_episode, synthetic_source
-from labelkit.labelers import validate_segments
-from labelkit.labelers.metadata import label_metadata
-from labelkit.labelers.subgoals import derive_subgoals
-from labelkit.labelers.subtasks import label_subtasks
-from labelkit.providers import build_provider
-from labelkit.rubric import load_rubric
-from labelkit.schema import (
+from robovid_conditioner.demo import synthetic_episode, synthetic_source
+from robovid_conditioner.labelers import validate_segments
+from robovid_conditioner.labelers.metadata import label_metadata
+from robovid_conditioner.labelers.subgoals import derive_subgoals
+from robovid_conditioner.labelers.subtasks import label_subtasks
+from robovid_conditioner.providers import build_provider
+from robovid_conditioner.rubric import load_rubric
+from robovid_conditioner.schema import (
     EpisodeAnnotation,
     EpisodeMetadata,
     SubtaskSegment,
@@ -68,7 +68,7 @@ def test_annotations_parquet_roundtrip(tmp_path: Path):
 
 def test_write_is_deterministic(tmp_path: Path):
     src = synthetic_source(3)
-    from labelkit.annotate import annotate_source
+    from robovid_conditioner.annotate import annotate_source
 
     a = annotate_source(src, tmp_path / "a", provider=build_provider("mock"))
     b = annotate_source(synthetic_source(3), tmp_path / "b", provider=build_provider("mock"))

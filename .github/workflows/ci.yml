@@ -33,11 +33,11 @@ jobs:
 
       - name: Offline demo (integration test, must finish fast with no API key)
         run: |
-          labelkit demo --out ci_demo_out --episodes 3
+          robovid_conditioner demo --out ci_demo_out --episodes 3
           test -f ci_demo_out/annotations.parquet
           # Assert the sidecar has all three record types.
           python - <<'PY'
-          from labelkit.schema import read_annotations
+          from robovid_conditioner.schema import read_annotations
           df = read_annotations("ci_demo_out")
           types = set(df["record_type"])
           assert types == {"episode_metadata", "subtask", "subgoal"}, types

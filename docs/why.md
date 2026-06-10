@@ -1,9 +1,9 @@
 # Do these annotations actually improve training?
 
 Short answer: **not demonstrated, and on at least one careful test, no.** Read this
-before assuming labelkit's annotations help a downstream model.
+before assuming robovid_conditioner's annotations help a downstream model.
 
-labelkit produces *measured* conditioning annotations. Whether feeding those
+robovid_conditioner produces *measured* conditioning annotations. Whether feeding those
 annotations into a world model or VLA actually lowers downstream error is a
 separate question, and it is easy to fool yourself on. The author ran a
 preregistered, controlled head-to-head on exactly this question (a small JEPA
@@ -30,7 +30,7 @@ effect sizes were small for reasons that had little to do with annotation qualit
 
 What this means for you:
 
-1. Do not treat labelkit's annotations as a known training win. They are a
+1. Do not treat robovid_conditioner's annotations as a known training win. They are a
    measured first pass, not a result.
 2. If you use them for VLA finetuning or data filtering, **run your own controlled
    evaluation** — ideally in a metric that is not in the model's own latent space
@@ -42,5 +42,5 @@ What this means for you:
 The full preregistration, paired-bootstrap analysis, variance normalization,
 inverse-dynamics probe, and trivial-baseline diagnostics live in the author's
 research repository's technical report. This page is the public summary; the claim
-labelkit makes is "labels + measurement + a fixing loop," not "labels that improve
+robovid_conditioner makes is "labels + measurement + a fixing loop," not "labels that improve
 training."

@@ -54,7 +54,7 @@ class Episode:
 class EpisodeSource(ABC):
     """A dataset adapter: an iterable of :class:`Episode` objects.
 
-    Implementations live in :mod:`labelkit.adapters`. ``name`` identifies the
+    Implementations live in :mod:`robovid_conditioner.adapters`. ``name`` identifies the
     source format for provenance.
     """
 

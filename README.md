@@ -1,4 +1,4 @@
-# labelkit
+# robovid_conditioner
 
 **Generate π0.7-style conditioning annotations — subtask temporal boundaries, episode quality/strategy metadata, subgoal keyframes — for LeRobot datasets, using the VLM of your choice, with a built-in human calibration loop and measured reliability.**
 
@@ -12,7 +12,7 @@ Install and run the offline demo (no API key, finishes in seconds):
 
 ```bash
 pip install -e .          # or: uv pip install -e .
-labelkit demo --out demo_out
+robovid_conditioner demo --out demo_out
 ```
 
 That generates tiny synthetic episodes, annotates them with the (meaningless)
@@ -25,20 +25,20 @@ Now do it for real on a LeRobot dataset with a real VLM:
 pip install -e '.[lerobot]'
 export GEMINI_API_KEY=...          # the error names the exact var if you forget
 
-labelkit annotate \
+robovid_conditioner annotate \
   --source lerobot \
   --target lerobot/svla_so101_pickplace \
   --provider gemini --limit 5 \
   --out so101_annotations
 
-labelkit gate        --annotations so101_annotations          # automatic red flags
-labelkit review      --annotations so101_annotations --gold so101_gold.json \
+robovid_conditioner gate        --annotations so101_annotations          # automatic red flags
+robovid_conditioner review      --annotations so101_annotations --gold so101_gold.json \
                      --source lerobot --target lerobot/svla_so101_pickplace
-labelkit reliability --gold so101_gold.json                    # VLM-vs-you agreement
+robovid_conditioner reliability --gold so101_gold.json                    # VLM-vs-you agreement
 ```
 
 Providers: `gemini`, `openai`, local `qwen` (`pip install '.[qwen]'`), and `mock`.
-Adding another is one new file in `src/labelkit/providers/`. Full real walkthrough:
+Adding another is one new file in `src/robovid_conditioner/providers/`. Full real walkthrough:
 [`docs/lerobot_walkthrough.md`](docs/lerobot_walkthrough.md). Output schema:
 [`SCHEMA.md`](SCHEMA.md).
 
@@ -56,10 +56,10 @@ This tool was built *because of* the following numbers, not in spite of them. On
 
 A VLM that disagrees with a human on more than half the quality scores, and picks
 the "right" subgoal frame about a third of the time, is not a labeling oracle —
-it is a fast first pass that you must measure and correct. So labelkit ships the
+it is a fast first pass that you must measure and correct. So robovid_conditioner ships the
 two things that turn a fast first pass into usable data: a **calibration loop**
-(`labelkit review`) where you confirm or fix labels, and a **reliability report**
-(`labelkit reliability`) that tells you how far the VLM was from you on *your*
+(`robovid_conditioner review`) where you confirm or fix labels, and a **reliability report**
+(`robovid_conditioner reliability`) that tells you how far the VLM was from you on *your*
 data, in the same units (boundary IoU, score agreement, subgoal agreement).
 
 If those numbers are bad enough on your dataset, the honest output of this tool is
@@ -69,14 +69,14 @@ If those numbers are bad enough on your dataset, the honest output of this tool 
 
 ## Scope honesty
 
-The default rubric (`src/labelkit/rubric.yaml`) was tuned on **tabletop
+The default rubric (`src/robovid_conditioner/rubric.yaml`) was tuned on **tabletop
 pick-and-place** teleoperation (the BridgeData V2 / SO-10x family). It has **not**
 been validated on:
 
 - long-horizon or multi-stage tasks,
 - deformable-object manipulation,
 - mobile manipulation,
-- multi-view / multi-camera reasoning (labelkit currently labels from one camera).
+- multi-view / multi-camera reasoning (robovid_conditioner currently labels from one camera).
 
 The rubric is config, not code: copy `rubric.yaml`, edit the prompts and the
 quality scale, and pass `--rubric your_rubric.yaml`. Expect to re-tune the prompts
@@ -87,10 +87,10 @@ and re-measure reliability for a new task family.
 ## What this is *not*
 
 - **Not a format converter.** It does not convert between dataset formats. If you
-  need that, use a format tool (e.g. a dataset "forge"); labelkit reads LeRobot
+  need that, use a format tool (e.g. a dataset "forge"); robovid_conditioner reads LeRobot
   and writes a sidecar.
 - **Not a dataset standard.** It does not define how robot data should be stored.
-  [LeRobot](https://github.com/huggingface/lerobot) is the standard; labelkit
+  [LeRobot](https://github.com/huggingface/lerobot) is the standard; robovid_conditioner
   annotates it.
 - **Not a labeling vendor.** There is no service, no account, no data leaving your
   machine except the VLM API calls you choose to make. You bring the VLM key.
@@ -98,7 +98,7 @@ and re-measure reliability for a new task family.
   conditioning annotations actually help VLA finetuning is a separate, hard
   question. The honest current answer — and the methodology behind it — is written
   up in [`docs/why.md`](docs/why.md); read it before assuming these labels help a
-  downstream model. labelkit gives you measured labels, not a training result.
+  downstream model. robovid_conditioner gives you measured labels, not a training result.
 
 ---
 

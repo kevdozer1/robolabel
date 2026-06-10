@@ -5,8 +5,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from labelkit.providers import available_providers, build_provider
-from labelkit.providers.base import MissingCredentialError, extract_json, load_secret
+from robovid_conditioner.providers import available_providers, build_provider
+from robovid_conditioner.providers.base import MissingCredentialError, extract_json, load_secret
 
 
 def _frames(n=4):
@@ -43,12 +43,12 @@ def test_build_provider_unknown_name_lists_options():
 
 
 def test_load_secret_names_exact_env_var(monkeypatch):
-    monkeypatch.delenv("LABELKIT_FAKE_KEY", raising=False)
+    monkeypatch.delenv("ROBOVID_FAKE_KEY", raising=False)
     monkeypatch.chdir("/")  # avoid picking up a stray .env
-    with pytest.raises(MissingCredentialError, match="LABELKIT_FAKE_KEY"):
-        load_secret(["LABELKIT_FAKE_KEY"], "Fake")
+    with pytest.raises(MissingCredentialError, match="ROBOVID_FAKE_KEY"):
+        load_secret(["ROBOVID_FAKE_KEY"], "Fake")
 
 
 def test_load_secret_reads_env(monkeypatch):
-    monkeypatch.setenv("LABELKIT_FAKE_KEY", "abc123")
-    assert load_secret(["LABELKIT_FAKE_KEY"], "Fake") == "abc123"
+    monkeypatch.setenv("ROBOVID_FAKE_KEY", "abc123")
+    assert load_secret(["ROBOVID_FAKE_KEY"], "Fake") == "abc123"
