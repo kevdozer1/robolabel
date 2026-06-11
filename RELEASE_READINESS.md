@@ -5,13 +5,13 @@ smoke-tested, what is missing, and what to fix first.
 
 ## What works (tested)
 
-- **Core pipeline, offline.** `robovid_conditioner demo` runs end to end in ~1s with no API
+- **Core pipeline, offline.** `robolabel demo` runs end to end in ~1s with no API
   key (synthetic episodes → mock provider → valid `annotations.parquet` → gate).
   Covered by `tests/test_demo.py` and the CI integration step.
 - **Provider layer.** Two-stage observe→label flow, raw-response receipts,
   per-call cost, contact sheet, and a credential loader that names the exact
   missing env var. Registry + one-file-per-provider. Mock fully tested.
-- **Live Gemini provider (dogfooded).** Ran `robovid_conditioner annotate
+- **Live Gemini provider (dogfooded).** Ran `robolabel annotate
   --provider gemini` against the real `lerobot/svla_so101_pickplace` dataset and
   got sensible labels (5-segment approach→grasp→move→release→retreat
   segmentation, quality/mistake judgments, subgoal frames) with usage-based cost
@@ -96,10 +96,9 @@ smoke-tested, what is missing, and what to fix first.
 
 ## Known gaps
 
-- **Name.** The public brand/command is now **`robolabel`** (console-script + README);
-  the import package and `[project] name` are still `robovid_conditioner`. Finish the
-  package/PyPI rename before first publish (steps in `docs/launch_checklist.md`), and
-  reserve `robolabel` on PyPI + GitHub.
+- **Name.** Renamed to **`robolabel`** throughout (import package, `[project] name`,
+  CLI, schema-version strings). Still to do before publish: **reserve `robolabel` on
+  PyPI + GitHub** (it was free when the name was chosen — confirm at publish time).
 - **LeRobot write-back.** `export --format lerobot` now writes our subtask boundaries
   into the pinned-lerobot subtask convention (`meta/subtasks.parquet` + a per-episode
   boundary table), round-trip-tested through lerobot's `load_subtasks`. Still *export*,
@@ -149,6 +148,6 @@ what `scripts/run_ablation.py` does once the credential is present.
    0.4.x can carry per-episode annotation fields cleanly; either implement
    `--writeback` or document it as out of scope and remove the forward-reference
    from `SCHEMA.md`.
-3. **Reserve the PyPI name and tag 0.1.0.** `robovid_conditioner` is free on PyPI;
+3. **Reserve the PyPI name and tag 0.1.0.** `robolabel` is free on PyPI;
    register it, then publish the first release with the pinned `lerobot` version
    range documented in the README.

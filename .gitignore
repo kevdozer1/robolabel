@@ -19,7 +19,7 @@ venv/
 .env
 *.key
 
-# robovid_conditioner outputs (annotations, extracted frames, receipts, gold sets)
+# robolabel outputs (annotations, extracted frames, receipts, gold sets)
 *.annotations/
 annotations.parquet
 human_annotations.parquet

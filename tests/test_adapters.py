@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from robovid_conditioner.adapters import DirectoryAdapter, build_source
-from robovid_conditioner.adapters.lerobot import LeRobotAdapter
+from robolabel.adapters import DirectoryAdapter, build_source
+from robolabel.adapters.lerobot import LeRobotAdapter
 
 
 def _write_frame_episodes(root: Path, n_eps: int = 2, n_frames: int = 10) -> None:

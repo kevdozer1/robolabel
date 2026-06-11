@@ -1,4 +1,4 @@
-"""Browser-based calibration GUI (``robovid_conditioner review``).
+"""Browser-based calibration GUI (``robolabel review``).
 
 A self-contained ``http.server`` single-page app — no Streamlit. It plays the
 episode and lets you **scrub frame by frame**, watch the active subtask highlight
@@ -8,7 +8,7 @@ adapter, so boundary setting is frame-accurate and works for any source (LeRobot
 or a directory of videos/frames) with only Pillow.
 
 Your edits are written to the gold file's ``gold`` block via
-:func:`robovid_conditioner.gold.update_episode_review`; the VLM ``auto`` labels
+:func:`robolabel.gold.update_episode_review`; the VLM ``auto`` labels
 are never touched. The header shows live reliability as you review.
 """
 
@@ -222,7 +222,7 @@ def _is_reviewed(entry: dict[str, Any]) -> bool:
 
 def make_handler(session: ReviewSession):
     class Handler(BaseHTTPRequestHandler):
-        server_version = "robovid_conditioner_review/1.0"
+        server_version = "robolabel_review/1.0"
 
         def do_GET(self) -> None:  # noqa: N802
             path = urlparse(self.path).path
@@ -297,7 +297,7 @@ def serve(session: ReviewSession, host: str = "127.0.0.1", port: int = 8787, ope
     port = _free_port(port)
     server = ThreadingHTTPServer((host, port), make_handler(session))
     url = f"http://{host}:{port}"
-    print(f"robovid_conditioner review GUI: {url}")
+    print(f"robolabel review GUI: {url}")
     print(f"gold file: {session.gold_file.resolve()}")
     if not session.episodes:
         print("note: no --source given, so frames are not shown. Pass --source/--target to scrub the clip.")
@@ -339,7 +339,7 @@ def main(argv: list[str] | None = None) -> int:
 
 INDEX_HTML = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>robovid_conditioner review</title><style>
+<title>robolabel review</title><style>
 :root{--bg:#f6f7f9;--panel:#fff;--ink:#1f2933;--muted:#64748b;--line:#d9dee7;--blue:#2563eb;--green:#16835b;}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:var(--bg)}
 header{height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid var(--line);background:#fff;position:sticky;top:0;z-index:5}
@@ -374,7 +374,7 @@ textarea{width:100%;min-height:52px;resize:vertical;border:1px solid var(--line)
 button.primary{background:var(--blue);color:#fff;border:0;padding:11px;border-radius:6px;font-weight:700;cursor:pointer;width:100%}
 .checks label{display:block;margin:7px 0;font-size:13px}
 </style></head><body>
-<header><h1>robovid_conditioner · calibration</h1><div class="stats" id="stats"></div></header>
+<header><h1>robolabel · calibration</h1><div class="stats" id="stats"></div></header>
 <main>
  <aside class="queue">
   <div class="queue-toolbar"><button class="btn" onclick="go(-1)">◀ Prev</button><button class="btn" onclick="go(1)">Next ▶</button><button class="btn" onclick="nextUnreviewed()">Next unreviewed</button></div>

@@ -9,21 +9,21 @@ from pathlib import Path
 
 import pytest
 
-from robovid_conditioner.demo import synthetic_episode
-from robovid_conditioner.gate import (
+from robolabel.demo import synthetic_episode
+from robolabel.gate import (
     is_degenerate_single_segment,
     is_uniform_split,
     run_gate,
 )
-from robovid_conditioner.labelers.segmentation import (
+from robolabel.labelers.segmentation import (
     SchemaValidationError,
     sample_frames,
     segment_episode,
     validate_grounded_segments,
 )
-from robovid_conditioner.providers import build_provider
-from robovid_conditioner.rubric import load_rubric
-from robovid_conditioner.schema import (
+from robolabel.providers import build_provider
+from robolabel.rubric import load_rubric
+from robolabel.schema import (
     EpisodeAnnotation,
     EpisodeMetadata,
     SubtaskSegment,
@@ -31,7 +31,7 @@ from robovid_conditioner.schema import (
     read_annotations,
     write_annotations,
 )
-from robovid_conditioner.strategy import PRESETS, load_strategy
+from robolabel.strategy import PRESETS, load_strategy
 
 
 # --------------------------------------------------------------------------- #
@@ -149,7 +149,7 @@ class _SingleSegProvider:
     def ask(self, frames, frame_labels, question, receipt_path, *, frame_captions=None, temperature=None):
         import json
 
-        from robovid_conditioner.providers.base import ProviderResponse, write_receipt
+        from robolabel.providers.base import ProviderResponse, write_receipt
         q = question.lower()
         last = int(max(frame_labels)) if frame_labels else 0
         # grounded-label check before events (the label prompt embeds the observe events).
@@ -318,7 +318,7 @@ def test_eval_harness_scoring_against_gold():
     auto = ev.segments_to_auto(segs, 21)
     assert auto["subtasks"][0]["end_frame"] == 10
     assert auto["subgoals"][0]["frame_idx"] == 10  # subgoal == segment end
-    gold = {"schema_version": "robovid_conditioner/gold/v1", "episodes": [
+    gold = {"schema_version": "robolabel/gold/v1", "episodes": [
         {"episode_id": "0", "task": "t", "num_frames": 21,
          "auto": {"subtasks": [], "metadata": {}, "subgoals": []},
          "gold": {"metadata": {"quality": 4},

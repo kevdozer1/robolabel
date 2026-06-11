@@ -43,14 +43,14 @@ from statistics import mean
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from robovid_conditioner.gate import is_degenerate_single_segment, is_uniform_split  # noqa: E402
-from robovid_conditioner.labelers.metadata import label_metadata  # noqa: E402
-from robovid_conditioner.labelers.segmentation import segment_episode  # noqa: E402
-from robovid_conditioner.labelers.subgoals import derive_subgoals  # noqa: E402
-from robovid_conditioner.reliability import reliability_report  # noqa: E402
-from robovid_conditioner.rubric import Rubric, load_rubric  # noqa: E402
-from robovid_conditioner.schema import SubtaskSegment  # noqa: E402
-from robovid_conditioner.strategy import load_strategy  # noqa: E402
+from robolabel.gate import is_degenerate_single_segment, is_uniform_split  # noqa: E402
+from robolabel.labelers.metadata import label_metadata  # noqa: E402
+from robolabel.labelers.segmentation import segment_episode  # noqa: E402
+from robolabel.labelers.subgoals import derive_subgoals  # noqa: E402
+from robolabel.reliability import reliability_report  # noqa: E402
+from robolabel.rubric import Rubric, load_rubric  # noqa: E402
+from robolabel.schema import SubtaskSegment  # noqa: E402
+from robolabel.strategy import load_strategy  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
@@ -86,7 +86,7 @@ def build_eval_gold(real_gold: dict, auto_by_ep: dict[str, dict],
             "episode_id": eid, "task": src.get("task"), "num_frames": src.get("num_frames"),
             "auto": auto, "gold": src["gold"], "review_notes": "",
         })
-    return {"schema_version": "robovid_conditioner/gold/v1", "episodes": episodes}
+    return {"schema_version": "robolabel/gold/v1", "episodes": episodes}
 
 
 def score_against_gold(eval_gold: dict) -> dict:
@@ -136,7 +136,7 @@ def _load_episodes(dataset: str, camera_key: str | None, episode_ids: list[str])
     end ("Invalid key: 569 out of bounds for size 454"). The dataset is already
     cached locally, so loading it whole costs nothing and decoding stays lazy.
     """
-    from robovid_conditioner.adapters import build_source
+    from robolabel.adapters import build_source
     wanted = {str(e) for e in episode_ids}
     kwargs: dict = {}
     if camera_key:
@@ -262,7 +262,7 @@ def spend_from_receipts(out: str | Path) -> float:
     do not re-spend, so summing files is the authoritative spend (not per-cell costs,
     which double-count the shared metadata calls).
     """
-    from robovid_conditioner.providers.gemini import _estimate_cost
+    from robolabel.providers.gemini import _estimate_cost
     total = 0.0
     root = Path(out)
     if not root.exists():
@@ -295,7 +295,7 @@ def run(args: argparse.Namespace) -> None:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    from robovid_conditioner.providers.base import build_provider
+    from robolabel.providers.base import build_provider
 
     results: list[dict] = []
     for spec in args.models:
@@ -363,15 +363,15 @@ def render_tables(rows: list[dict]) -> str:
 def self_test() -> None:
     import tempfile as _tf
 
-    from robovid_conditioner.demo import synthetic_episode
-    from robovid_conditioner.providers import build_provider
+    from robolabel.demo import synthetic_episode
+    from robolabel.providers import build_provider
 
     rubric = load_rubric()
     provider = build_provider("mock")
     eids = ["0", "1", "2"]
     episodes = {e: synthetic_episode(int(e)) for e in eids}
     # A minimal human gold with absolute frames.
-    gold = {"schema_version": "robovid_conditioner/gold/v1", "episodes": [
+    gold = {"schema_version": "robolabel/gold/v1", "episodes": [
         {"episode_id": e, "task": "t", "num_frames": episodes[e].num_frames,
          "auto": {"subtasks": [], "metadata": {}, "subgoals": []},
          "gold": {"metadata": {"quality": 4}, "subtasks": [

@@ -1,4 +1,4 @@
-"""Labelers: turn an :class:`~robovid_conditioner.episode.Episode` into annotations.
+"""Labelers: turn an :class:`~robolabel.episode.Episode` into annotations.
 
 Each labeler runs the provider's two-stage observe→label flow and returns typed
 results plus the provider calls (for cost/receipt accounting). Shared helpers for

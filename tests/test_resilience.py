@@ -11,11 +11,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from robovid_conditioner.annotate import annotate_source
-from robovid_conditioner.demo import synthetic_source
-from robovid_conditioner.providers.base import ProviderResponse
-from robovid_conditioner.providers.mock import MockProvider
-from robovid_conditioner.schema import list_episode_ids, read_annotations
+from robolabel.annotate import annotate_source
+from robolabel.demo import synthetic_source
+from robolabel.providers.base import ProviderResponse
+from robolabel.providers.mock import MockProvider
+from robolabel.schema import list_episode_ids, read_annotations
 
 
 class _FlakyProvider(MockProvider):

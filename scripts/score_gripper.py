@@ -28,8 +28,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import eval_strategies as ev  # noqa: E402
 import numpy as np  # noqa: E402
 
-from robovid_conditioner.labelers.gripper_baseline import segment_from_state  # noqa: E402
-from robovid_conditioner.rubric import load_rubric  # noqa: E402
+from robolabel.labelers.gripper_baseline import segment_from_state  # noqa: E402
+from robolabel.rubric import load_rubric  # noqa: E402
 
 
 def _load_states(dataset: str, episode_ids: list[str]) -> dict[str, np.ndarray]:

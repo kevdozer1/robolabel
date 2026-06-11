@@ -1,12 +1,12 @@
-"""``robovid_conditioner`` command-line interface.
+"""``robolabel`` command-line interface.
 
-    robovid_conditioner annotate    run the VLM labelers over a dataset -> annotations.parquet
-    robovid_conditioner review      open the browser calibration GUI (human labels)
-    robovid_conditioner reliability VLM-vs-human agreement report from a gold file
-    robovid_conditioner gate        automatic red-flag check on an annotation set
-    robovid_conditioner export      consolidated JSONL view of the sidecar
-    robovid_conditioner cost        cost / receipt accounting
-    robovid_conditioner demo        offline end-to-end demo (mock provider, no API key)
+    robolabel annotate    run the VLM labelers over a dataset -> annotations.parquet
+    robolabel review      open the browser calibration GUI (human labels)
+    robolabel reliability VLM-vs-human agreement report from a gold file
+    robolabel gate        automatic red-flag check on an annotation set
+    robolabel export      consolidated JSONL view of the sidecar
+    robolabel cost        cost / receipt accounting
+    robolabel demo        offline end-to-end demo (mock provider, no API key)
 
 Heavy imports are deferred into each handler so unrelated subcommands stay light.
 """

@@ -54,7 +54,7 @@ gate detectors:
 | **S4** | S3 + self-consistency (k=3 label samples, per-boundary median) | band (c) |
 | **S_grip** | **free, zero-API** proprioceptive baseline: boundaries from gripper open/close + end-effector-speed pauses, phases by event order | (reference floor) |
 
-Resolved configs in `src/robovid_conditioner/strategy.py`; grounded prompts in
+Resolved configs in `src/robolabel/strategy.py`; grounded prompts in
 `rubric.yaml`. (Note: the grounded re-prompt cap is ≤2 re-prompts per label pass, within
 the operating guardrail. The ablation was run under the prior **hard-reject**
 min-granularity policy; the shipped default is now `warn` — set

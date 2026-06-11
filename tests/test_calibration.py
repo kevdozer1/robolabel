@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from robovid_conditioner.annotate import annotate_source
-from robovid_conditioner.cost import cost_summary
-from robovid_conditioner.demo import synthetic_source
-from robovid_conditioner.gold import build_gold_template, load_or_sync_gold, update_episode_review
-from robovid_conditioner.providers import build_provider
-from robovid_conditioner.reliability import reliability_report
-from robovid_conditioner.schema import export_jsonl
+from robolabel.annotate import annotate_source
+from robolabel.cost import cost_summary
+from robolabel.demo import synthetic_source
+from robolabel.gold import build_gold_template, load_or_sync_gold, update_episode_review
+from robolabel.providers import build_provider
+from robolabel.reliability import reliability_report
+from robolabel.schema import export_jsonl
 
 
 def _annotated(tmp_path: Path) -> Path:

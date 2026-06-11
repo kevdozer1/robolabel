@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from robovid_conditioner.labelers.gripper_baseline import segment_from_state
-from robovid_conditioner.rubric import load_rubric
+from robolabel.labelers.gripper_baseline import segment_from_state
+from robolabel.rubric import load_rubric
 
 
 def _pick_place_state(n=120):

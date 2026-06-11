@@ -1,6 +1,6 @@
 """Cost accounting from the per-call receipts and the sidecar.
 
-``robovid_conditioner cost`` sums the per-episode cost estimates recorded in
+``robolabel cost`` sums the per-episode cost estimates recorded in
 ``annotations.parquet`` and counts the raw receipts on disk. Cost estimates are
 only as good as the provider's pricing table (OpenAI reports none, so its cost is
 null); the raw token counts are always in the receipts for an exact audit.

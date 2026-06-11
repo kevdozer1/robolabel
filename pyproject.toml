@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "robovid_conditioner"
+name = "robolabel"
 version = "0.1.0"
-description = "Generate pi0.7-style conditioning annotations for LeRobot datasets with any VLM, plus a human calibration loop and measured reliability."
+description = "VLM-drafted subtask + episode-quality annotations for LeRobot datasets, measured against human calibration."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
@@ -38,20 +38,17 @@ qwen = ["torch>=2.1", "transformers>=4.45", "accelerate>=0.30", "qwen-vl-utils>=
 dev = ["pytest>=7.4", "ruff>=0.4"]
 
 [project.scripts]
-# `robolabel` is the public command/brand; `robovid_conditioner` stays as an alias
-# until the package/PyPI rename (tracked in docs/launch_checklist.md).
-robolabel = "robovid_conditioner.cli:main"
-robovid_conditioner = "robovid_conditioner.cli:main"
+robolabel = "robolabel.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/kevdozer1/robovid_conditioner"
-"Technical report (does this help training?)" = "https://github.com/kevdozer1/robovid_conditioner/blob/main/docs/why.md"
+Homepage = "https://github.com/kevdozer1/robolabel"
+"Technical report (does this help training?)" = "https://github.com/kevdozer1/robolabel/blob/main/docs/why.md"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/robovid_conditioner"]
+packages = ["src/robolabel"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/robovid_conditioner", "README.md", "LICENSE", "SCHEMA.md"]
+include = ["src/robolabel", "README.md", "LICENSE", "SCHEMA.md"]
 
 [tool.ruff]
 line-length = 110

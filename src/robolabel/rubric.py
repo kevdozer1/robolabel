@@ -29,7 +29,7 @@ class Rubric:
 
     @property
     def schema_version(self) -> str:
-        return str(self.data.get("schema_version", "robovid_conditioner/rubric/v1"))
+        return str(self.data.get("schema_version", "robolabel/rubric/v1"))
 
     @property
     def keyframes(self) -> int:
@@ -147,7 +147,7 @@ def _fill(template: str, **values: object) -> str:
 def load_rubric(path: str | Path | None = None) -> Rubric:
     """Load a rubric from ``path`` or the bundled default."""
     if path is None:
-        text = resources.files("robovid_conditioner").joinpath("rubric.yaml").read_text(encoding="utf-8")
+        text = resources.files("robolabel").joinpath("rubric.yaml").read_text(encoding="utf-8")
         return Rubric(data=yaml.safe_load(text), source="bundled:rubric.yaml")
     p = Path(path)
     return Rubric(data=yaml.safe_load(p.read_text(encoding="utf-8")), source=str(p))

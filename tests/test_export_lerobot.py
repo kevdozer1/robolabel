@@ -14,13 +14,13 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from robovid_conditioner.export_lerobot import (
+from robolabel.export_lerobot import (
     SUBTASKS_REL_PATH,
     build_subtask_vocabulary,
     export_lerobot_subtasks,
     frame_subtask_indices,
 )
-from robovid_conditioner.schema import (
+from robolabel.schema import (
     EpisodeAnnotation,
     SubtaskSegment,
     episode_records,

@@ -1,7 +1,7 @@
-"""Dataset adapters: turn a stored dataset into :class:`~robovid_conditioner.episode.Episode`s.
+"""Dataset adapters: turn a stored dataset into :class:`~robolabel.episode.Episode`s.
 
-* :class:`~robovid_conditioner.adapters.lerobot.LeRobotAdapter` — primary (HF hub id or local).
-* :class:`~robovid_conditioner.adapters.directory.DirectoryAdapter` — escape hatch (videos / frame dirs).
+* :class:`~robolabel.adapters.lerobot.LeRobotAdapter` — primary (HF hub id or local).
+* :class:`~robolabel.adapters.directory.DirectoryAdapter` — escape hatch (videos / frame dirs).
 """
 
 from __future__ import annotations

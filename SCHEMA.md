@@ -1,13 +1,13 @@
 # Schema
 
-`robovid_conditioner` writes two artifacts: a VLM annotations sidecar (`annotations.parquet`)
+`robolabel` writes two artifacts: a VLM annotations sidecar (`annotations.parquet`)
 and, separately, a human gold file (`*.json`). They are never merged; VLM labels
 and human labels live in different files so neither can silently overwrite the
 other.
 
 ## `annotations.parquet` (VLM output)
 
-Schema version: **`robovid_conditioner/annotations/v2`** (stored in every row's
+Schema version: **`robolabel/annotations/v2`** (stored in every row's
 `schema_version` column; bump it on any breaking change). Long format — one row
 per record, three record types per episode.
 
@@ -18,7 +18,7 @@ columns are simply absent and treated as null.
 
 | column | type | record types | meaning |
 |---|---|---|---|
-| `schema_version` | str | all | `robovid_conditioner/annotations/v2` |
+| `schema_version` | str | all | `robolabel/annotations/v2` |
 | `source` | str | all | always `vlm` in this file |
 | `episode_id` | str | all | stable id from the adapter |
 | `task` | str? | all | task string if the dataset has one |
@@ -68,14 +68,14 @@ counts.
 
 ## Gold file (human labels)
 
-Schema version: **`robovid_conditioner/gold/v1`**. One JSON object with an `episodes` list.
+Schema version: **`robolabel/gold/v1`**. One JSON object with an `episodes` list.
 Each episode has an `auto` block (a snapshot of the VLM labels) and a `gold` block
 (what the human enters). `accept_auto` flags mean "the human confirms the VLM
 value here".
 
 ```json
 {
-  "schema_version": "robovid_conditioner/gold/v1",
+  "schema_version": "robolabel/gold/v1",
   "episodes": [{
     "episode_id": "0",
     "task": "pink lego brick into the transparent box",

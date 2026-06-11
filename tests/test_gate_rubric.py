@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from robovid_conditioner.gate import _object_tokens, run_gate
-from robovid_conditioner.rubric import load_rubric
-from robovid_conditioner.schema import EpisodeAnnotation, EpisodeMetadata, SubtaskSegment, write_annotations
+from robolabel.gate import _object_tokens, run_gate
+from robolabel.rubric import load_rubric
+from robolabel.schema import EpisodeAnnotation, EpisodeMetadata, SubtaskSegment, write_annotations
 
 
 def test_object_grounding_ignores_action_verbs_and_robot_parts():
@@ -28,7 +28,7 @@ def test_rubric_fill_preserves_json_braces():
 def test_rubric_custom_path(tmp_path: Path):
     custom = tmp_path / "r.yaml"
     custom.write_text(
-        "schema_version: robovid_conditioner/rubric/v1\nname: custom\nkeyframes: 3\n"
+        "schema_version: robolabel/rubric/v1\nname: custom\nkeyframes: 3\n"
         "subtasks: {min_segments: 1, max_segments: 2, observe_prompt: 'o {task}', label_prompt: 'l {task}'}\n"
         "metadata: {quality_scale: {'1': low, '5': high}, observe_prompt: 'o', label_prompt: 'l {quality_scale}'}\n"
         "subgoals: {source: subtask_end}\ngate: {min_distinct_quality_scores: 3}\n",

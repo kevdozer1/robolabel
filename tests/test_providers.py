@@ -5,8 +5,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from robovid_conditioner.providers import available_providers, build_provider
-from robovid_conditioner.providers.base import MissingCredentialError, extract_json, load_secret
+from robolabel.providers import available_providers, build_provider
+from robolabel.providers.base import MissingCredentialError, extract_json, load_secret
 
 
 def _frames(n=4):

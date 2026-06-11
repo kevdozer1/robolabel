@@ -39,7 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # for the sibling eval
 
 import eval_strategies as ev  # noqa: E402
 
-from robovid_conditioner.rubric import load_rubric  # noqa: E402
+from robolabel.rubric import load_rubric  # noqa: E402
 
 # Expected segmentation calls per episode: observe + k label samples + refinement.
 # (S3 ≈ observe+label+3 refine; S4 ≈ observe+3 labels+3 refine on ~4 segments.)
@@ -127,7 +127,7 @@ def _log(run_log: dict, out: Path, msg: str) -> None:
 
 def _probe_per_call(out: Path, model_dir: str, probe_id: str) -> float:
     """Average $/call over the probe episode's own (cache-bypassed) receipts."""
-    from robovid_conditioner.providers.gemini import _estimate_cost
+    from robolabel.providers.gemini import _estimate_cost
     costs: list[float] = []
     for d in (out / model_dir / "metadata" / probe_id, out / model_dir / "S1" / "raw_receipts" / probe_id):
         if not d.exists():
@@ -147,7 +147,7 @@ def _probe_per_call(out: Path, model_dir: str, probe_id: str) -> float:
 
 def _price_table_estimate(model: str) -> float:
     """Conservative per-call $ from the gemini price table (a typical grounded call)."""
-    from robovid_conditioner.providers.gemini import _PRICES
+    from robolabel.providers.gemini import _PRICES
     low = model.lower()
     key = "2.5-pro" if "2.5-pro" in low else "2.5-flash" if "2.5-flash" in low else "flash-lite"
     prices = _PRICES.get(key)
@@ -165,7 +165,7 @@ def run(args: argparse.Namespace) -> int:
     out.mkdir(parents=True, exist_ok=True)
     run_log: dict = {"budget_usd": args.budget, "events": []}
 
-    from robovid_conditioner.providers.base import MissingCredentialError, build_provider
+    from robolabel.providers.base import MissingCredentialError, build_provider
 
     flash_model, pro_model = args.flash, args.pro
     tune_ids = list(split["tune"])
@@ -283,7 +283,7 @@ def run(args: argparse.Namespace) -> int:
 
 def _run_test_cell(args, rubric, gold, test_ids, model_id, strat, out, run_log, per_call,
                    flash, flash_model, flash_id, build_provider, only_if_budget=False) -> None:
-    from robovid_conditioner.providers.base import build_provider as _bp  # noqa: F811
+    from robolabel.providers.base import build_provider as _bp  # noqa: F811
     provider = flash if model_id == flash_id else _bp(*_spec(_model_spec_from_id(model_id, args)))
     test_eps = ev._load_episodes(args.dataset, args.camera_key, test_ids)
     spent = ev.spend_from_receipts(out)
@@ -318,18 +318,18 @@ def _dry_run() -> int:
     """Exercise the full orchestration offline with mock + synthetic episodes."""
     import tempfile
 
-    from robovid_conditioner.demo import synthetic_episode
+    from robolabel.demo import synthetic_episode
     rubric = load_rubric()
     ids = [str(i) for i in range(5)]
     eps = {i: synthetic_episode(int(i)) for i in ids}
-    gold = {"schema_version": "robovid_conditioner/gold/v1", "episodes": [
+    gold = {"schema_version": "robolabel/gold/v1", "episodes": [
         {"episode_id": i, "task": "t", "num_frames": eps[i].num_frames,
          "auto": {"subtasks": [], "metadata": {}, "subgoals": []},
          "gold": {"metadata": {"quality": 4},
                   "subtasks": [{"segment_idx": 0, "start_frame": 0, "end_frame": eps[i].num_frames // 2},
                                {"segment_idx": 1, "start_frame": eps[i].num_frames // 2 + 1,
                                 "end_frame": eps[i].num_frames - 1}], "subgoals": []}} for i in ids]}
-    from robovid_conditioner.providers import build_provider
+    from robolabel.providers import build_provider
     prov = build_provider("mock")
     with tempfile.TemporaryDirectory() as d:
         out = Path(d)

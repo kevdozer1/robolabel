@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from robovid_conditioner.demo import run_demo
-from robovid_conditioner.schema import read_annotations
+from robolabel.demo import run_demo
+from robolabel.schema import read_annotations
 
 
 def test_offline_demo_produces_valid_parquet(tmp_path: Path):

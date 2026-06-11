@@ -1,13 +1,13 @@
 # Migration Map
 
-`robovid_conditioner` is a deliberate min-cut extraction from a private research monorepo (`annotation_pipeline` / `bridgeengine`). This file records every monorepo module that was **ported**, **adapted**, or **deliberately left behind**, with a one-line reason. It is maintained throughout the extraction; it is the eulogy for the complexity that did not make the cut.
+`robolabel` is a deliberate min-cut extraction from a private research monorepo (`annotation_pipeline` / `bridgeengine`). This file records every monorepo module that was **ported**, **adapted**, or **deliberately left behind**, with a one-line reason. It is maintained throughout the extraction; it is the eulogy for the complexity that did not make the cut.
 
 The monorepo is a read-only reference. No file was copied with its git history (that history contains machine-specific paths, personal documents, and API cost receipts). Everything here was re-authored or transcribed deliberately into a clean tree.
 
 ## Proposed package layout
 
 ```
-src/robovid_conditioner/
+src/robolabel/
   episode.py            # Episode dataclass + EpisodeSource ABC (the adapter contract)
   adapters/
     lerobot.py          # LeRobotAdapter (primary; HF hub id or local path)
@@ -28,13 +28,13 @@ src/robovid_conditioner/
   gold.py               # gold set create/merge/update — human labels kept separate from VLM
   review_server.py      # browser http.server calibration GUI (watch + frame-scrub + correct)
   cost.py               # cost aggregation from per-call receipts
-  cli.py                # robovid_conditioner annotate|review|reliability|gate|export|cost|demo
+  cli.py                # robolabel annotate|review|reliability|gate|export|cost|demo
   demo.py               # synthetic-episode generation + fully offline end-to-end demo
 ```
 
 ## Ported (transcribed and de-coupled)
 
-| Monorepo source | robovid_conditioner target | One-line reason |
+| Monorepo source | robolabel target | One-line reason |
 |---|---|---|
 | `bridgeengine/labelers/backends.py` | `providers/base.py` + `providers/{gemini,openai,mock}.py` | The provider abstraction (raw receipts, per-call cost, retries) is the product's spine; split one-file-per-provider and drop the moondream coupling. |
 | `bridgeengine/labelers/moondream_client.py` (`make_contact_sheet`, `_image_to_data_url`) | `providers/base.py` | Contact-sheet builder is provider-agnostic and reused by every provider; the Moondream HTTP client itself is left behind. |
@@ -70,6 +70,6 @@ src/robovid_conditioner/
 
 ## Provenance / license flags
 
-- All ported code is re-authored from a single-author private repo owned by the same author publishing `robovid_conditioner`; no third-party copied code is carried over. Dependencies (`pillow`, `pandas`, `pyarrow`, `requests`, `pyyaml`, `numpy`, `lerobot`) are used through their public APIs, not vendored; the review GUI is stdlib `http.server` only.
+- All ported code is re-authored from a single-author private repo owned by the same author publishing `robolabel`; no third-party copied code is carried over. Dependencies (`pillow`, `pandas`, `pyarrow`, `requests`, `pyyaml`, `numpy`, `lerobot`) are used through their public APIs, not vendored; the review GUI is stdlib `http.server` only.
 - License: Apache-2.0 (see `LICENSE`).
-- **Open flag:** `lerobot` is GPL-touching in some optional extras; `robovid_conditioner` depends on it only through the public `LeRobotDataset` read API and pins the version in the README. Confirm the pinned `lerobot` license is compatible with redistribution before tagging 1.0.
+- **Open flag:** `lerobot` is GPL-touching in some optional extras; `robolabel` depends on it only through the public `LeRobotDataset` read API and pins the version in the README. Confirm the pinned `lerobot` license is compatible with redistribution before tagging 1.0.

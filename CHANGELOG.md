@@ -30,5 +30,5 @@ First public release. Highlights:
 - **Cost-projection fix**: the budget-projection probe now bypasses the receipt cache (or
   falls back to the price table), so per-call cost is measured rather than read as $0 off
   a cached receipt (the wrinkle documented in the first ablation run).
-- **Brand/CLI is `robolabel`.** (The import package is still `robovid_conditioner` pending
-  the rename — see `docs/launch_checklist.md`.)
+- **Renamed to `robolabel`** — the import package, distribution name, and CLI command
+  are all `robolabel` (previously the working name `robovid_conditioner`).

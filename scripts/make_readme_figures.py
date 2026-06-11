@@ -3,7 +3,7 @@
 Produces two clean, low-clutter figures:
 
 1. ``annotation_overview.png`` — a filmstrip of one real episode with the three
-   things robovid_conditioner adds drawn directly on it: the subtask timeline,
+   things robolabel adds drawn directly on it: the subtask timeline,
    the quality/mistake badge, and the subgoal keyframes.
 2. ``pipeline.png`` — a one-line pipeline strip.
 
@@ -26,8 +26,8 @@ matplotlib.use("Agg")
 import matplotlib.patches as mpatches  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 
-from robovid_conditioner.adapters.lerobot import LeRobotAdapter  # noqa: E402
-from robovid_conditioner.schema import episode_records, read_annotations  # noqa: E402
+from robolabel.adapters.lerobot import LeRobotAdapter  # noqa: E402
+from robolabel.schema import episode_records, read_annotations  # noqa: E402
 
 # A calm, high-contrast palette (color-blind friendly-ish), one per subtask.
 SEGMENT_COLORS = ["#4C72B0", "#55A868", "#C44E52", "#8172B3", "#CCB974", "#64B5CD"]
@@ -101,9 +101,9 @@ def make_overview(annotations: str, target: str, camera: str, episode: int, out_
                  ncol=min(len(handles), 5), frameon=False, fontsize=8.5, handlelength=1.1,
                  columnspacing=1.2, title="subtasks", title_fontsize=8.5)
 
-    fig.suptitle("robovid_conditioner: one raw LeRobot episode → subtask boundaries · quality/mistake · subgoal keyframes",
+    fig.suptitle("robolabel: one raw LeRobot episode → subtask boundaries · quality/mistake · subgoal keyframes",
                  fontsize=12.5, fontweight="bold", y=0.99)
-    fig.text(0.5, 0.005, f"task: “{rec['task']}”   ·   VLM: Gemini 2.5 Flash   ·   measure agreement with `robovid_conditioner reliability`",
+    fig.text(0.5, 0.005, f"task: “{rec['task']}”   ·   VLM: Gemini 2.5 Flash   ·   measure agreement with `robolabel reliability`",
              ha="center", fontsize=9, color="#666666")
 
     out_dir.mkdir(parents=True, exist_ok=True)

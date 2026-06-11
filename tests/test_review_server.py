@@ -15,11 +15,11 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from robovid_conditioner.adapters import DirectoryAdapter
-from robovid_conditioner.annotate import annotate_source
-from robovid_conditioner.gold import load_or_sync_gold
-from robovid_conditioner.providers import build_provider
-from robovid_conditioner.review_server import ReviewSession, make_handler
+from robolabel.adapters import DirectoryAdapter
+from robolabel.annotate import annotate_source
+from robolabel.gold import load_or_sync_gold
+from robolabel.providers import build_provider
+from robolabel.review_server import ReviewSession, make_handler
 
 
 def _frame_dataset(root: Path, n_eps: int = 2, n_frames: int = 12) -> DirectoryAdapter:
@@ -92,7 +92,7 @@ def test_http_round_trip(tmp_path: Path):
 
         base = f"http://127.0.0.1:{server.server_address[1]}"
         html = urllib.request.urlopen(base + "/", timeout=10).read().decode("utf-8")
-        assert "robovid_conditioner" in html and "slider" in html  # the SPA with a scrubber
+        assert "robolabel" in html and "slider" in html  # the SPA with a scrubber
         state = json.loads(urllib.request.urlopen(base + "/api/state", timeout=10).read())
         assert state["episode_count"] == 2
         frame = urllib.request.urlopen(base + "/frame/ep_000/3", timeout=10).read()

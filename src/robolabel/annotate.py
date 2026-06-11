@@ -1,6 +1,6 @@
 """Orchestration: run every labeler over an :class:`EpisodeSource`.
 
-Produces a list of :class:`~robovid_conditioner.schema.EpisodeAnnotation` and writes the
+Produces a list of :class:`~robolabel.schema.EpisodeAnnotation` and writes the
 ``annotations.parquet`` sidecar. Each episode's raw provider receipts and
 extracted subgoal frames are written under ``out_dir``.
 """

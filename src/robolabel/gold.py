@@ -15,7 +15,7 @@ from typing import Any
 
 from .schema import episode_records, list_episode_ids, read_annotations
 
-GOLD_SCHEMA_VERSION = "robovid_conditioner/gold/v1"
+GOLD_SCHEMA_VERSION = "robolabel/gold/v1"
 
 
 def build_gold_template(annotations_dir: str | Path) -> dict[str, Any]:

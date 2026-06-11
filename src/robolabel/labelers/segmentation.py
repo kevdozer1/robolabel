@@ -1,8 +1,8 @@
 """Strategy-driven subtask segmentation (S1+).
 
 This implements the grounded segmentation path selected by a
-:class:`~robovid_conditioner.strategy.StrategyConfig`. The baseline (S0) path is
-left in :func:`robovid_conditioner.labelers.subtasks.label_subtasks` and is
+:class:`~robolabel.strategy.StrategyConfig`. The baseline (S0) path is
+left in :func:`robolabel.labelers.subtasks.label_subtasks` and is
 delegated to unchanged when the strategy is baseline.
 
 The grounded path:

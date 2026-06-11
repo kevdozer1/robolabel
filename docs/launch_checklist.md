@@ -10,14 +10,10 @@ engage the closest real thread honestly rather than inventing a request.
 
 ## 0. Pre-publish blockers
 
-- [ ] **Finish the package rename `robovid_conditioner` → `robolabel`.** Today the
-  *command* and brand are `robolabel` (console-script + README), but the import
-  package and `[project] name` are still `robovid_conditioner`. Before PyPI: rename
-  `src/robovid_conditioner/` → `src/robolabel/`, update imports (incl.
-  `scripts/eval_strategies.py`, `scripts/run_ablation.py`, `scripts/score_gripper.py`,
-  tests), set `[project] name = "robolabel"`, drop the alias if desired. **Do this
-  only after the strategy sweep + its writeup are done** — the running/ resumable
-  sweep imports `robovid_conditioner`.
+- [x] **Package rename `robovid_conditioner` → `robolabel` — DONE.** Import package
+  (`src/robolabel/`), `[project] name`, console-script, schema-version strings, and all
+  docs/imports are `robolabel`. Fresh-venv install + offline demo + full test suite +
+  secret/grep audit verified green post-rename.
 - [ ] **Reserve the name.** Confirm `robolabel` is free on PyPI and as a GitHub repo
   before first publish (the earlier `labelkit` name was already taken — check).
 - [ ] **Fill `STRATEGY_REPORT.md`** from `eval_out/results_{tune,test}.json` (+ merge

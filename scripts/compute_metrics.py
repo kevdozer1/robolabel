@@ -33,20 +33,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import eval_strategies as ev  # noqa: E402
 import numpy as np  # noqa: E402
 
-from robovid_conditioner.episode import Episode  # noqa: E402
-from robovid_conditioner.gate import is_degenerate_single_segment, is_uniform_split  # noqa: E402
-from robovid_conditioner.labelers.gripper_baseline import segment_from_state  # noqa: E402
-from robovid_conditioner.labelers.segmentation import segment_episode  # noqa: E402
-from robovid_conditioner.rubric import load_rubric  # noqa: E402
-from robovid_conditioner.schema import SubtaskSegment  # noqa: E402
-from robovid_conditioner.strategy import load_strategy  # noqa: E402
+from robolabel.episode import Episode  # noqa: E402
+from robolabel.gate import is_degenerate_single_segment, is_uniform_split  # noqa: E402
+from robolabel.labelers.gripper_baseline import segment_from_state  # noqa: E402
+from robolabel.labelers.segmentation import segment_episode  # noqa: E402
+from robolabel.rubric import load_rubric  # noqa: E402
+from robolabel.schema import SubtaskSegment  # noqa: E402
+from robolabel.strategy import load_strategy  # noqa: E402
 
 CANON = ["approach", "grasp", "transport", "release-place", "retract"]
 
 
 def _enforce_zero_api():
     """Make any un-cached Gemini call raise, so reconstruction can only read cache."""
-    import robovid_conditioner.providers.gemini as g
+    import robolabel.providers.gemini as g
 
     def _blocked(*a, **k):
         raise RuntimeError("zero-API guard: cache miss (no network)")
@@ -118,7 +118,7 @@ def _agg_boundary(per_ep_bounds: list[tuple[list[int], list[int]]], tol: int = 5
 # --------------------------------------------------------------------------- #
 def reconstruct_vlm(eval_out: Path, model_dir: str, model_name: str, strategy: str,
                     episodes: dict, rubric) -> dict[str, list]:
-    from robovid_conditioner.providers.base import build_provider
+    from robolabel.providers.base import build_provider
     provider = build_provider("gemini", model_name)
     # The ablation ran under the prior hard-reject granularity policy; pin it so the
     # reconstruction stays faithful to the reported run (the current default is "warn").

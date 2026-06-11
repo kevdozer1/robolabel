@@ -1,6 +1,6 @@
 """Offline demo: synthetic episodes + mock provider, end to end.
 
-``robovid_conditioner demo`` runs entirely offline with no API key. It generates tiny
+``robolabel demo`` runs entirely offline with no API key. It generates tiny
 synthetic episodes (procedurally — no real dataset files are bundled), annotates
 them with the meaningless :class:`MockProvider`, writes a valid
 ``annotations.parquet``, and runs the gate. It exercises the whole pipeline shape
