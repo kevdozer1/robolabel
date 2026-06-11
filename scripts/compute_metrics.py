@@ -29,9 +29,8 @@ from statistics import mean, median
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import numpy as np  # noqa: E402
-
 import eval_strategies as ev  # noqa: E402
+import numpy as np  # noqa: E402
 
 from robovid_conditioner.episode import Episode  # noqa: E402
 from robovid_conditioner.gate import is_degenerate_single_segment, is_uniform_split  # noqa: E402
