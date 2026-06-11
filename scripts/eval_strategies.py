@@ -126,12 +126,25 @@ def _safe(model_id: str) -> str:
 
 
 def _load_episodes(dataset: str, camera_key: str | None, episode_ids: list[str]) -> dict:
+    """Load the requested episodes by id.
+
+    We load the FULL dataset (no ``episodes=`` subset) and filter, rather than
+    passing a subset: the LeRobot adapter indexes frames by the episode's *global*
+    ``dataset_from_index``, which only matches the loaded rows when the dataset is
+    full (or a 0-based contiguous prefix). A non-contiguous subset like
+    ``[2, 6, 10, ...]`` re-indexes the rows 0..N and the global index runs off the
+    end ("Invalid key: 569 out of bounds for size 454"). The dataset is already
+    cached locally, so loading it whole costs nothing and decoding stays lazy.
+    """
     from robovid_conditioner.adapters import build_source
-    kwargs: dict = {"episodes": [int(e) for e in episode_ids]}
+    wanted = {str(e) for e in episode_ids}
+    kwargs: dict = {}
     if camera_key:
         kwargs["camera_key"] = camera_key
     source = build_source("lerobot", dataset, **kwargs)
-    return {ep.episode_id: ep for ep in source}
+    found = {ep.episode_id: ep for ep in source if ep.episode_id in wanted}
+    # Preserve the requested order.
+    return {str(e): found[str(e)] for e in episode_ids if str(e) in found}
 
 
 def _checkpoint_segments(path: Path, segs_by_ep: dict[str, list[SubtaskSegment]]) -> None:
