@@ -20,7 +20,7 @@ from pathlib import Path
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="robovid_conditioner", description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog="robolabel", description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("annotate", help="Run the VLM labelers over a dataset.")

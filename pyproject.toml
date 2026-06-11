@@ -38,6 +38,9 @@ qwen = ["torch>=2.1", "transformers>=4.45", "accelerate>=0.30", "qwen-vl-utils>=
 dev = ["pytest>=7.4", "ruff>=0.4"]
 
 [project.scripts]
+# `robolabel` is the public command/brand; `robovid_conditioner` stays as an alias
+# until the package/PyPI rename (tracked in docs/launch_checklist.md).
+robolabel = "robovid_conditioner.cli:main"
 robovid_conditioner = "robovid_conditioner.cli:main"
 
 [project.urls]
