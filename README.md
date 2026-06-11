@@ -1,5 +1,9 @@
 # robolabel
 
+[![CI](https://github.com/kevdozer1/robolabel/actions/workflows/ci.yml/badge.svg)](https://github.com/kevdozer1/robolabel/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
+
 **robolabel is a LeRobot-first open-source tool that uses VLMs to draft temporally grounded subtask and episode-quality annotations, then measures those drafts against human calibration instead of treating auto-labels as ground truth.**
 
 It drafts three things per episode — **subtask temporal boundaries**, **episode quality/strategy metadata**, and **subgoal keyframes** — and then tells you how far those drafts are from a human, in the same units. The honest claim here is not "good labels." It is **labels + measurement + a fixing loop**.
