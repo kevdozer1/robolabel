@@ -67,7 +67,9 @@ smoke-tested, what is missing, and what to fix first.
   (strategy, model) cell with the existing `reliability_report` against the frozen
   `eval/so101_split.json` (30 tune / 20 test, seeded). `scripts/run_ablation.py`
   orchestrates the budget-capped run; pure decision functions unit-tested.
-- **Quality bar.** `ruff` clean; 77 tests pass on Python 3.10; CI matrix 3.10/3.12.
+- **Quality bar.** `ruff` clean; 80 tests pass on Python 3.10; CI matrix 3.10/3.12. The
+  `robolabel` wheel builds and installs clean in a fresh venv (`robolabel` CLI + offline
+  demo verified from the built wheel). Tagged **v0.1.0** on `main` (local; not pushed).
 
 ## Fixed / found during the live run
 

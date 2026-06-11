@@ -16,11 +16,11 @@ engage the closest real thread honestly rather than inventing a request.
   secret/grep audit verified green post-rename.
 - [ ] **Reserve the name.** Confirm `robolabel` is free on PyPI and as a GitHub repo
   before first publish (the earlier `labelkit` name was already taken — check).
-- [ ] **Fill `STRATEGY_REPORT.md`** from `eval_out/results_{tune,test}.json` (+ merge
-  the `S_grip` row from `eval_out_grip/`) once the sweep finishes; apply
-  `docs/strategy_report_writeup_todo.md` (constant-5 quality baseline + catastrophic
-  false-negative reframing).
-- [ ] Tag `0.1.0` only after the report has real numbers.
+- [x] **`STRATEGY_REPORT.md` filled** with the live ablation results + the supplementary
+  metrics (uniform-fifths, boundary placement, distribution) and the quality reframing — DONE.
+- [x] **`v0.1.0` tagged** on the merged `main` (local; not pushed) — DONE.
+- [ ] **Human review of drafts** before posting: `docs/blog_post.md`, the issue replies
+  and Discord post below — all marked DRAFT, nothing posted.
 
 ## 1. PyPI publish steps
 
@@ -70,27 +70,31 @@ note before upload (verified against lerobot 0.4.4).
 > gold set (`robolabel gate` / `robolabel reliability`). Happy to share that curation
 > flow if the "which episodes?" question comes up again.
 
-## 3. LeRobot Discord post (draft — lead with the reliability table)
+## 3. LeRobot Discord post (draft — numbers final, lead with the honest table)
 
 > **robolabel** — VLM-drafted subtask + quality annotations for LeRobot datasets,
-> *measured* against human calibration instead of trusted. On
-> `lerobot/svla_so101_pickplace`, against a 50-episode human gold set:
+> *measured* against human calibration instead of trusted. I ran a full strategy
+> ablation on `lerobot/svla_so101_pickplace` (50-episode human gold, 30 tune / 20
+> held-out test). Honest held-out result:
 >
-> | _fill from STRATEGY_REPORT.md after the sweep_ | boundary IoU | quality (vs trivial) | subgoal |
+> | held-out test (20 eps) | boundary IoU | boundary recall ±5f | failure-band eps |
 > |---|---|---|---|
-> | out-of-the-box (S0) | _tbd_ | _tbd_ | _tbd_ |
-> | best strategy (test) | _tbd_ | _tbd_ | _tbd_ |
-> | free proprioceptive baseline (S_grip) | 0.204 | — | _tbd_ |
+> | baseline (S0, Flash) | **0.460** | 0.226 | 5 / 20 |
+> | grounded strategy (S2, Pro) | **0.444** | **0.307** | **0 / 20** |
+> | free proprioceptive baseline (S_grip) | 0.184 | 0.242 | 0 / 20 |
 >
-> It exports to the native `meta/subtasks.parquet` subtask convention, records every
-> VLM call's cost/receipt, and ships the reliability report + the full strategy
-> ablation. Repo + writeup: <link>, `STRATEGY_REPORT.md`. Feedback welcome.
+> The "smarter" strategy did *not* beat baseline on mean IoU — but it hit 36% more exact
+> transitions and eliminated every degenerate/uniform failure episode. Mean IoU was the
+> wrong number; the held-out test caught the overfit. It exports to the native
+> `meta/subtasks.parquet` convention, records every VLM call's cost/receipt, and ships the
+> reliability report + the full ablation writeup. Repo: <link> · `STRATEGY_REPORT.md`.
 
-Keep it to that table + two sentences; no hype. Fill the numbers from the report —
-do not post placeholders.
+Keep it to that table + the honest two sentences; no hype. The negative-but-measured framing
+*is* the pitch.
 
 ## 4. Links
 
+- Blog draft (honest writeup): [`docs/blog_post.md`](blog_post.md) — DRAFT, unposted
 - Strategy ablation writeup: [`STRATEGY_REPORT.md`](../STRATEGY_REPORT.md)
 - Output schema + LeRobot export: [`SCHEMA.md`](../SCHEMA.md)
 - Does this help training? [`docs/why.md`](why.md)
