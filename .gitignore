@@ -35,3 +35,6 @@ eval_out_grip/
 
 # OS
 .DS_Store
+
+# supplementary metrics (regenerable via scripts/compute_metrics.py)
+eval_metrics/

@@ -1,9 +1,17 @@
 # Strategy report: improving subtask-boundary quality on SO-101
 
 **Question.** Baseline Gemini 2.5 Flash on `lerobot/svla_so101_pickplace` segments
-episodes at a subtask-boundary temporal IoU of **0.457** against a 50-episode human
+episodes at a subtask-boundary temporal IoU of **0.457**† against a 50-episode human
 gold set. Can a better *annotation strategy* — not a different model — close that
 gap, and which part of the strategy carries the weight?
+
+> † **Number key (one canonical baseline number per context, used consistently
+> throughout this report, the README, and the blog draft):** **0.457** is the S0-Flash
+> boundary IoU over the **full 50-episode** human calibration. **0.400** and **0.460**
+> are the S0-Flash boundary IoU on the **30-episode tune** and **20-episode test**
+> subsets respectively (the split is random, so the subset baselines differ from the
+> full-set number and from each other). When this report compares strategies, it uses
+> the tune/test subset numbers; 0.457 is only the headline full-set baseline.
 
 **Short answer (honest).** The strategy layer's tune-set advantage **did not
 generalize** to the held-out test set on *mean* boundary IoU: the mechanically-chosen
@@ -78,10 +86,21 @@ within the operating guardrail.)
 | **Pro** | **S2** | **0.453** | **0.87** | 0.112 | $0.0684 | 0 | 0 |
 | Pro | S3 | 0.430 | 0.87 | 0.112 | $0.1113 | 0 | 0 |
 | Pro | S4 | 0.435 | 0.87 | 0.129 | $0.1694 | 0 | 0 |
-| S_grip | — | 0.204 | n/a | 0.060 | **$0.00** | 0 | 0 |
+| _S_grip_ (free) | — | 0.204 | n/a | 0.060 | **$0.00** | 0 | 0 |
+| _uniform-fifths_ (free) | — | 0.356 | n/a | — | **$0.00** | 0 | 30† |
+
+† uniform-fifths is uniform by construction, so the uniform-split detector flags all 30
+— a sanity check that the detector fires on the trivial baseline.
 
 Reportable cells (≥25/30 scored): all VLM cells (S3/S4-Flash dropped 1–2 episodes to
 the capped re-prompt loop; those count toward no band, they are simply un-scored).
+
+**The trivial floors.** The uniform-fifths blind baseline scores **0.356** boundary IoU
+on tune (0.359 on test) and the free proprioceptive `S_grip` scores **0.204** (0.184
+test). So every VLM cell (0.39–0.45) sits **~0.10 above the uniform floor and ~0.25 above
+S_grip** — the models are doing real work, but the *spread among strategies* (0.39–0.45)
+is small next to their distance above the floor. The discriminating signal is finer than
+mean IoU; see the placement table next.
 
 ### Per-failure-band movement (tune), the mechanism story
 
@@ -120,6 +139,8 @@ borne out next.
 |---|---|---|---|---|---|---|
 | **Pro** | **S2** (chosen) | **0.444** | 0.95 | 0.122 | **0** | **0** |
 | Flash | S0 (baseline) | **0.460** | 0.90 | 0.622 | **2** | **3** |
+| _uniform-fifths_ (free) | — | 0.359 | n/a | — | 0 | 20 |
+| _S_grip_ (free) | — | 0.184 | n/a | 0.073 | 0 | 0 |
 
 Reported once, unmodified, no reruns.
 
@@ -133,6 +154,79 @@ Pro-S2 reaches 0.444 with **0 of 20** in any failure band. If your downstream us
 trusts auto-labels, S0's "higher mean" includes 25% catastrophic episodes; the grounded
 strategy trades ~0.016 mean IoU for never emitting one. Which you prefer depends on
 whether a bad label is worse than a mediocre one — for training-data curation, it usually is.
+
+---
+
+## Boundary placement & IoU distribution (zero-API, reconstructed from cached receipts)
+
+Mean temporal IoU rewards getting segment *extents* roughly right; it is forgiving about
+the exact transition *frame*. Two metrics that are not: **boundary precision/recall within
+±5 frames** of a gold boundary (greedy match) and **mean absolute frame error** on
+matched boundaries. Plus the IoU **distribution** over episodes (median, p10), not just
+the mean. (All reconstructed offline from the sweep's cached receipts; the flat-mean
+column reproduces the headline IoU above exactly, confirming fidelity.)
+
+**Held-out test — and the two metrics disagree:**
+
+| cell | IoU (flat) | IoU median | IoU p10 | boundary P@±5 | boundary R@±5 | MAE (frames) |
+|---|---|---|---|---|---|---|
+| Flash S0 (baseline) | 0.460 | 0.438 | 0.282 | 0.230 | **0.226** | 2.1 |
+| **Pro S2 (chosen)** | 0.444 | 0.440 | 0.252 | 0.238 | **0.307** | 2.8 |
+| uniform-fifths | 0.359 | 0.342 | 0.199 | 0.188 | 0.242 | 2.3 |
+| S_grip | 0.184 | 0.173 | 0.055 | 0.259 | 0.242 | 3.4 |
+
+**On held-out data, mean IoU and boundary placement point opposite ways.** S0-Flash wins
+mean IoU (0.460 > 0.444), but **Pro-S2 places 36% more gold boundaries within ±5 frames**
+(recall 0.307 vs 0.226) at comparable precision. IoU rewards S0's coarse extent overlap;
+boundary recall rewards Pro-S2's exact transitions. For π-style conditioning — where the
+*transition frame* is the thing you condition on — the placement metric is arguably the
+one that matters, and on it the grounded strategy wins on held-out data. (Note S_grip:
+poor IoU (0.18) but boundary recall ~0.24, on par with S0 — gripper events land near real
+transitions even when the segment extents don't overlap.)
+
+**Tune (all cells):**
+
+| cell | IoU flat | median | p10 | P@±5 | R@±5 | MAE |
+|---|---|---|---|---|---|---|
+| Flash S0 | 0.400 | 0.399 | 0.244 | 0.156 | 0.163 | 2.2 |
+| Flash S1 | 0.391 | 0.367 | 0.220 | 0.208 | 0.302 | 2.8 |
+| Flash S2 | 0.415 | 0.368 | 0.237 | 0.236 | 0.337 | 2.6 |
+| Flash S3 | 0.426 | 0.412 | 0.301 | 0.167 | 0.244 | 2.9 |
+| Flash S4 | 0.430 | 0.408 | 0.299 | 0.205 | 0.300 | 2.7 |
+| Pro S0 | 0.355 | 0.360 | 0.290 | 0.130 | 0.105 | 2.6 |
+| Pro S1 | 0.438 | 0.383 | 0.269 | 0.233 | 0.326 | 2.2 |
+| Pro S2 | 0.453 | 0.407 | 0.291 | 0.250 | 0.349 | 2.4 |
+| Pro S3 | 0.430 | 0.375 | 0.272 | 0.217 | 0.302 | 3.0 |
+| Pro S4 | 0.435 | 0.404 | 0.297 | 0.193 | 0.267 | 3.4 |
+| uniform-fifths | 0.356 | 0.328 | 0.201 | 0.100 | 0.140 | 2.3 |
+| S_grip | 0.204 | 0.179 | 0.037 | 0.255 | 0.291 | 3.1 |
+
+Two distributional reads: (1) **boundary recall ~doubles** from S0-Flash (0.16) to any
+grounded cell (0.30–0.35) — grounding is the change that hits exact transition frames.
+(2) Grounding **lifts the p10 (worst-decile) floor** (S0-Flash 0.244 → grounded 0.27–0.30)
+more than it lifts the median — consistent with "it removes the catastrophic episodes, it
+does not raise the typical one." MAE on matched boundaries is ~2–3 frames everywhere; the
+differentiator is *how many* boundaries match (recall), not how close the matches are.
+
+### Placement vs granularity — worked examples (ep11, ep7)
+
+These show why IoU and placement disagree, using the same two held-out exhibits.
+
+- **ep11 (S0 degenerate).** S0-Flash returns one segment `[0..200]`; IoU still scores it
+  **~0.35** (the accidental overlap of `[0,200]` with the first gold segment `[0,70]` is
+  not zero) — **IoU launders a degenerate output**. But it places **zero** boundaries, so
+  boundary recall is **0**. Pro-S2 places four, one at frame 73 (gold 70, within ±3). The
+  placement metric gives S0 the zero it deserves; mean IoU does not.
+- **ep7 (human = a single segment `[202]`).** The gold has **no internal boundaries**.
+  Both S0 (3 predicted boundaries) and Pro-S2 (4) therefore score **boundary precision 0**
+  — every predicted boundary is a false positive — and S2's min-granularity floor *forces*
+  the over-segmentation. Here placement precision exposes the **granularity cost** that
+  IoU only partly penalizes. (This example motivates the tool change demoting the
+  hard min-granularity rule to a warning — see the changelog.)
+
+Together: IoU measures extent, placement measures transitions; ep11 shows placement
+catching under-segmentation IoU hides, ep7 shows it catching forced over-segmentation.
+Report both.
 
 ---
 
@@ -242,6 +336,15 @@ was fooled.)
 - **Quality metric near-degenerate.** With 49/50 at score 5, exact agreement is dominated
   by the constant-5 baseline; only the catastrophic-FN rate is informative. Re-run on a
   dataset with real quality spread to evaluate quality *discrimination*.
+- **The gold itself is S0-anchored — for boundaries, not just subgoals.** The human gold was
+  created by *correcting S0 drafts*, so both the boundary *placement* and the *granularity*
+  (number of segments) are anchored toward what S0 proposed: a reviewer nudges a drafted
+  boundary by a few frames far more often than they delete a segment or insert a new one.
+  This gives S0 a quiet home-field advantage on **every** boundary metric here (IoU and
+  placement alike), distinct from but adjacent to the subgoal anchoring above. That the
+  grounded strategy still *wins boundary placement on held-out data despite* this S0 bias
+  strengthens, not weakens, that particular finding. A clean test needs boundaries labeled
+  from scratch, blind to any draft.
 - **Subgoal agreement is confounded** with the original S0 segmentation the gold was built
   against (above).
 - **Tune-set rubric exposure.** The grounded prompts and gate thresholds were authored
@@ -255,11 +358,26 @@ was fooled.)
 
 ## Verdict
 
-On this dataset, the strategy layer is **not** a free win on mean boundary IoU — the
-held-out test says the S0-Flash baseline is as good or better on the average. Its real,
-held-out-confirmed value is **robustness**: it eliminates the degenerate and uniform-split
-failure bands entirely (25% → 0% of test episodes), and the stronger model cuts
-catastrophic quality false-negatives. Whether that robustness is worth ~4× the cost
-(Pro) and a subgoal-agreement regression is a judgment for your pipeline — and the only
-reason we can state the trade-off honestly is that everything here was measured against a
-human gold set in the same units, winners and losers reported side by side.
+**Mean boundary IoU is the wrong single number to crown a winner on this dataset, and it
+is not at the trivial floor either.** The uniform-fifths baseline scores 0.359 on test, so
+the VLM cells (0.44–0.46) clear it by ~0.10 — there *is* signal above trivial. But the
+signal that separates the *strategies* is finer than mean IoU, and the metrics disagree:
+
+- **Mean IoU (extent overlap):** S0-Flash ≥ the grounded winner on held-out test (0.460 vs
+  0.444). No improvement.
+- **Boundary placement (exact transitions, ±5 frames):** the grounded winner **beats**
+  S0-Flash on held-out test (recall 0.307 vs 0.226) — it hits 36% more transition frames.
+- **Failure-band rate:** S0-Flash leaves 5/20 test episodes degenerate-or-uniform; grounding
+  leaves 0/20.
+- **Catastrophic quality false-negatives:** the stronger model cuts them 3→1 (tune).
+- **Quality exact-agreement:** dominated by the constant-5 baseline — uninformative here.
+- **Subgoal agreement:** regresses, but confounded with the S0-anchored gold (below).
+
+So the honest synthesis: **the discriminating signals are failure-band rate, boundary
+placement, and catastrophic false-negatives — not coarse mean IoU.** On those, grounding
+(and the stronger model) win or hold on held-out data; on coarse mean IoU it is a wash or
+a slight loss. Whether that is worth ~4× the cost (Pro) and the granularity cost on
+genuinely-single-segment episodes (ep7) is a pipeline judgment — and the only reason we
+can lay the trade-off out this precisely is that every cell, baseline, and metric was
+measured against the same human gold set, winners and losers side by side. See
+**Recommended defaults** (README) for the practical call.
