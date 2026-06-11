@@ -74,6 +74,50 @@ If those numbers are bad enough on your dataset, the honest output of this tool 
 
 ---
 
+## Annotation strategies (boundary quality)
+
+The hard part of these labels is the *subtask boundaries* — where one phase ends
+and the next begins. A plain "segment this episode" prompt fails in three ways we
+observed on SO-101: (a) a degenerate single "complete the task" segment, (b) a
+correct 5-phase decomposition with boundaries at uniform fifths of the duration
+(never grounded to the video), and (c) plausible boundaries that are systematically
+off by several frames.
+
+`robovid_conditioner` ships a strategy layer that attacks these directly. Strategies
+are cumulative, config-selectable (`--strategy S0..S4`), recorded in
+`strategy.json`, and **off by default** — S0 is the original baseline and stays
+bit-for-bit reproducible:
+
+| strategy | adds |
+|---|---|
+| **S0** | baseline: evenly-spaced keyframes, free-text segments |
+| **S1** | frame-indexed grounding — boundaries returned as frame indices, each with a one-line visual-evidence statement, schema-validated |
+| **S2** | S1 + a closed phase vocabulary (approach / grasp / transport / release-place / retract / other) and a minimum granularity that rejects single-segment outputs |
+| **S3** | S2 + a dense-window refinement pass that pins each boundary to its exact transition frame |
+| **S4** | S3 + self-consistency (k=3 samples, per-boundary median) |
+
+Which strategy actually wins on *your* data is an empirical question, measured the
+same way everything else here is — against the human gold set with the reliability
+report. The SO-101 ablation (S0–S4 × Gemini Flash/Pro, tuned on 30 episodes and
+scored once on 20 held-out) is written up in
+[`STRATEGY_REPORT.md`](STRATEGY_REPORT.md).
+
+---
+
+## What the gate does and does not do
+
+`robovid_conditioner gate` is an **advisory** check. It flags episodes; it **never
+drops, deletes, or rewrites** an episode, and it reports `Episodes dropped by the
+gate: 0` to make that explicit. The flags include the three failure-band detectors
+above (degenerate single segment, near-uniform split) and a **quality-outlier
+policy**: an episode whose quality score is two or more points below the dataset's
+neighborhood (median) is flagged `needs_review` rather than trusted — this is what
+catches a VLM hallucinating a low score on a perfectly good episode (on SO-101 the
+VLM scored two clean successes a `1`). What you filter, and at what threshold, is
+your decision; the gate surfaces, it does not silently remove.
+
+---
+
 ## Scope honesty
 
 The default rubric (`src/robovid_conditioner/rubric.yaml`) was tuned on **tabletop

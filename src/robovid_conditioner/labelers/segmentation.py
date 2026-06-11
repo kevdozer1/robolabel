@@ -1,0 +1,350 @@
+"""Strategy-driven subtask segmentation (S1+).
+
+This implements the grounded segmentation path selected by a
+:class:`~robovid_conditioner.strategy.StrategyConfig`. The baseline (S0) path is
+left in :func:`robovid_conditioner.labelers.subtasks.label_subtasks` and is
+delegated to unchanged when the strategy is baseline.
+
+The grounded path:
+
+1. samples ``frame_count`` evenly-spaced frames and presents each with its frame
+   index + timestamp (caption + a textual manifest in the prompt);
+2. runs the two-stage observe→label flow, but the label stage must return
+   per-segment ``end_frame`` (a concrete frame index) and ``evidence`` (one line),
+   optionally constrained to a closed phase vocabulary and a minimum granularity
+   (schema-validated, with re-prompts);
+3. for self-consistency (S4) draws ``self_consistency_k`` label samples and takes
+   the per-boundary median;
+4. for refinement (S3+) sends a dense ±``refine_window`` frame window per internal
+   boundary and pins it to the exact transition frame.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+import statistics
+from collections import Counter
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+
+from ..episode import Episode
+from ..providers.base import ProviderResponse, VLMProvider, try_extract_json
+from ..rubric import Rubric
+from ..schema import SubtaskSegment
+from ..strategy import StrategyConfig
+from . import validate_segments
+from .subtasks import SubtaskResult, label_subtasks
+
+
+class SchemaValidationError(ValueError):
+    """A grounded segmentation answer violated the strategy's output schema."""
+
+
+def segment_episode(
+    episode: Episode,
+    provider: VLMProvider,
+    rubric: Rubric,
+    config: StrategyConfig,
+    receipt_dir: Path,
+) -> SubtaskResult:
+    """Segment one episode under ``config``. Baseline strategies delegate to S0."""
+    if config.is_baseline:
+        return label_subtasks(episode, provider, rubric, receipt_dir)
+
+    indices = sample_frames(episode, config.frame_count)
+    frames = episode.frames(indices)
+    captions = frame_captions(indices, episode.fps) if config.caption_timestamps else None
+    manifest = frame_manifest(indices, episode.fps)
+    last_frame = episode.num_frames - 1
+    task = episode.task or episode.episode_id
+    calls: list[ProviderResponse] = []
+
+    # Stage one: physical events, grounded to frame indices (observed once, reused
+    # across all self-consistency samples — it is deterministic).
+    observe_q = rubric.grounded_observe_prompt(task=task, frame_manifest=manifest)
+    observed = provider.ask(frames, indices, observe_q, receipt_dir / "subtasks_observe.json",
+                            frame_captions=captions)
+    calls.append(observed)
+    observations = try_extract_json(observed.answer)
+    obs_text = json.dumps(observations, sort_keys=True) if observations is not None else "[]"
+
+    # Stage two: k grounded label samples.
+    k = max(1, config.self_consistency_k)
+    samples: list[list[SubtaskSegment]] = []
+    for s in range(k):
+        temperature = config.temperature if k > 1 else None
+        segs, sample_calls = _grounded_label(
+            provider, frames, indices, rubric, config, receipt_dir,
+            task=task, last_frame=last_frame, observations=obs_text, manifest=manifest,
+            captions=captions, sample_idx=s, temperature=temperature, num_samples=k,
+        )
+        calls.extend(sample_calls)
+        samples.append(segs)
+
+    segments = _median_combine(samples, last_frame) if k > 1 else samples[0]
+
+    # Post-pass: dense-window boundary refinement.
+    if config.refine_boundaries and len(segments) > 1:
+        segments, refine_calls = _refine_boundaries(
+            episode, provider, rubric, segments, config, receipt_dir
+        )
+        calls.extend(refine_calls)
+
+    for i, seg in enumerate(segments):
+        seg.segment_idx = i
+    return SubtaskResult(segments, observations, calls, indices)
+
+
+# --------------------------------------------------------------------------- #
+# Frame sampling + presentation
+# --------------------------------------------------------------------------- #
+def sample_frames(episode: Episode, frame_count: int) -> list[int]:
+    """Evenly-spaced, de-duplicated, sorted frame indices for the contact sheet."""
+    n = episode.num_frames
+    if n <= 1:
+        return [0]
+    return sorted({int(round(x)) for x in np.linspace(0, n - 1, min(max(2, frame_count), n))})
+
+
+def frame_captions(indices: list[int], fps: float) -> list[str]:
+    f = max(float(fps), 1e-6)
+    return [f"f{i}  {i / f:.2f}s" for i in indices]
+
+
+def frame_manifest(indices: list[int], fps: float) -> str:
+    f = max(float(fps), 1e-6)
+    return ", ".join(f"frame {i} ({i / f:.2f}s)" for i in indices)
+
+
+# --------------------------------------------------------------------------- #
+# Grounded label stage (with schema validation + re-prompts)
+# --------------------------------------------------------------------------- #
+def _grounded_label(
+    provider: VLMProvider,
+    frames: list[np.ndarray],
+    indices: list[int],
+    rubric: Rubric,
+    config: StrategyConfig,
+    receipt_dir: Path,
+    *,
+    task: str,
+    last_frame: int,
+    observations: str,
+    manifest: str,
+    captions: list[str] | None,
+    sample_idx: int,
+    temperature: float | None,
+    num_samples: int,
+) -> tuple[list[SubtaskSegment], list[ProviderResponse]]:
+    base_q = rubric.grounded_label_prompt(
+        task=task, last_frame=last_frame, observations=observations, frame_manifest=manifest
+    )
+    calls: list[ProviderResponse] = []
+    segments: list[SubtaskSegment] | None = None
+    for attempt in range(max(1, config.max_label_attempts)):
+        question = base_q if attempt == 0 else base_q + "\n\n" + _retry_suffix(rubric)
+        receipt = receipt_dir / _label_receipt_name(num_samples, sample_idx, attempt)
+        resp = provider.ask(frames, indices, question, receipt,
+                            frame_captions=captions, temperature=temperature)
+        calls.append(resp)
+        try:
+            segments = validate_grounded_segments(
+                try_extract_json(resp.answer), last_frame + 1, config, rubric
+            )
+            break
+        except SchemaValidationError:
+            segments = None
+    if segments is None:
+        # Honest fallback: keep whatever boundaries we can parse leniently so the
+        # episode still produces a segmentation. It will be caught by the
+        # degenerate / uniform-split gate detectors rather than silently dropped.
+        segments = validate_segments(
+            try_extract_json(calls[-1].answer), last_frame + 1,
+            1, rubric.strategy_max_segments,
+        )
+    return segments, calls
+
+
+def validate_grounded_segments(
+    raw: object, num_frames: int, config: StrategyConfig, rubric: Rubric
+) -> list[SubtaskSegment]:
+    """Validate a grounded segmentation answer into contiguous frame-indexed segments.
+
+    Raises :class:`SchemaValidationError` when the answer violates the strategy's
+    contract (no segments, a non-integer ``end_frame``, missing per-boundary
+    ``evidence`` when grounded, or fewer than the minimum segments when
+    ``enforce_min_segments``). Unknown phases are coerced to ``other`` rather than
+    rejected.
+    """
+    items = raw.get("segments", raw.get("subtasks", [])) if isinstance(raw, dict) else raw
+    if not isinstance(items, list) or not items:
+        raise SchemaValidationError("no segments in answer")
+    last = max(0, num_frames - 1)
+    vocab = set(rubric.phase_vocabulary)
+    clean: list[SubtaskSegment] = []
+    cursor = 0
+    for item in items[: rubric.strategy_max_segments]:
+        if not isinstance(item, dict):
+            continue
+        end = item.get("end_frame", item.get("end_step"))
+        try:
+            end_i = int(end)
+        except (TypeError, ValueError) as exc:
+            raise SchemaValidationError("segment missing integer end_frame") from exc
+        evidence = str(item.get("evidence") or "").strip()
+        if config.grounded and not evidence:
+            raise SchemaValidationError("segment missing per-boundary evidence")
+        phase = str(item.get("phase") or "").strip().lower()
+        if config.closed_vocabulary and phase not in vocab:
+            phase = "other"
+        text = str(item.get("subtask_text") or item.get("text") or item.get("description") or "").strip()
+        if not text:
+            text = phase or "subtask"
+        end_i = min(max(cursor, end_i), last)
+        clean.append(SubtaskSegment(
+            segment_idx=len(clean), start_frame=cursor, end_frame=end_i,
+            subtask_text=text[:160], phase=phase or None, evidence=evidence or None,
+        ))
+        cursor = end_i + 1
+        if cursor > last:
+            break
+    if not clean:
+        raise SchemaValidationError("no valid segments after parsing")
+    if config.enforce_min_segments and len(clean) < rubric.strategy_min_segments:
+        raise SchemaValidationError(
+            f"degenerate segmentation: {len(clean)} < {rubric.strategy_min_segments} required segments"
+        )
+    clean[0].start_frame = 0
+    clean[-1].end_frame = last
+    for i, seg in enumerate(clean):
+        seg.segment_idx = i
+    return clean
+
+
+def _retry_suffix(rubric: Rubric) -> str:
+    return (
+        f"Your previous answer was rejected. Return at least {rubric.strategy_min_segments} "
+        "segments, each with an integer end_frame chosen from the captioned frame indices and a "
+        "one-clause evidence string. Do not return a single segment."
+    )
+
+
+def _label_receipt_name(num_samples: int, sample_idx: int, attempt: int) -> str:
+    if num_samples == 1 and attempt == 0:
+        return "subtasks_label.json"  # stable name (matches resume cache + gate)
+    return f"subtasks_label_s{sample_idx}_a{attempt}.json"
+
+
+# --------------------------------------------------------------------------- #
+# Self-consistency: per-boundary median over k samples
+# --------------------------------------------------------------------------- #
+def _median_combine(samples: list[list[SubtaskSegment]], last: int) -> list[SubtaskSegment]:
+    samples = [s for s in samples if s]
+    if not samples:
+        return [SubtaskSegment(0, 0, last, "complete the task")]
+    modal_n = Counter(len(s) for s in samples).most_common(1)[0][0]
+    matching = [s for s in samples if len(s) == modal_n]
+    ref = matching[0]  # phase/evidence/text taken from the first sample at the modal count
+    if modal_n <= 1:
+        return ref
+    boundaries: list[int] = []
+    for j in range(modal_n - 1):
+        ends = [s[j].end_frame for s in matching]
+        boundaries.append(int(round(statistics.median(ends))))
+    boundaries = _monotonic(boundaries, last)
+    segments: list[SubtaskSegment] = []
+    cursor = 0
+    for j in range(modal_n):
+        end = boundaries[j] if j < modal_n - 1 else last
+        end = min(max(cursor, end), last)
+        r = ref[j]
+        segments.append(SubtaskSegment(
+            segment_idx=j, start_frame=cursor, end_frame=end,
+            subtask_text=r.subtask_text, phase=r.phase, evidence=r.evidence,
+        ))
+        cursor = end + 1
+    segments[-1].end_frame = last
+    return segments
+
+
+def _monotonic(boundaries: list[int], last: int) -> list[int]:
+    out: list[int] = []
+    prev = 0
+    for b in boundaries:
+        b = max(prev + 1, min(int(b), last - 1))
+        out.append(b)
+        prev = b
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Refinement: dense-window per-boundary transition pinning
+# --------------------------------------------------------------------------- #
+def _refine_boundaries(
+    episode: Episode,
+    provider: VLMProvider,
+    rubric: Rubric,
+    segments: list[SubtaskSegment],
+    config: StrategyConfig,
+    receipt_dir: Path,
+) -> tuple[list[SubtaskSegment], list[ProviderResponse]]:
+    task = episode.task or episode.episode_id
+    last = episode.num_frames - 1
+    calls: list[ProviderResponse] = []
+    for i in range(len(segments) - 1):
+        boundary = segments[i].end_frame
+        lo = max(0, boundary - config.refine_window)
+        hi = min(last, boundary + config.refine_window)
+        window = _dense_window(lo, hi, config.refine_max_frames)
+        if len(window) < 2:
+            continue
+        frames = episode.frames(window)
+        captions = frame_captions(window, episode.fps)
+        manifest = frame_manifest(window, episode.fps)
+        question = rubric.refine_prompt(
+            task=task,
+            phase_before=segments[i].phase or segments[i].subtask_text or "previous subtask",
+            phase_after=segments[i + 1].phase or segments[i + 1].subtask_text or "next subtask",
+            boundary_evidence=segments[i].evidence or "the subtask transition",
+            frame_manifest=manifest,
+        )
+        resp = provider.ask(frames, window, question, receipt_dir / f"refine_b{i}.json",
+                            frame_captions=captions)
+        calls.append(resp)
+        refined = _extract_frame(try_extract_json(resp.answer))
+        if refined is None:
+            continue
+        # Clamp into the window and strictly inside both neighbours.
+        lower = segments[i].start_frame + 1
+        upper = segments[i + 1].end_frame - 1
+        refined = min(max(lo, refined), hi)
+        refined = min(max(lower, refined), upper)
+        segments[i].end_frame = refined
+        segments[i + 1].start_frame = refined + 1
+    return segments, calls
+
+
+def _dense_window(lo: int, hi: int, max_frames: int) -> list[int]:
+    full = list(range(lo, hi + 1))
+    if len(full) <= max_frames:
+        return full
+    step = math.ceil(len(full) / max_frames)
+    sub = full[::step]
+    if sub[-1] != hi:
+        sub.append(hi)
+    return sub
+
+
+def _extract_frame(data: Any) -> int | None:
+    if isinstance(data, dict):
+        for key in ("frame", "frame_index", "end_frame", "transition_frame"):
+            if key in data:
+                data = data[key]
+                break
+    try:
+        return int(data)
+    except (TypeError, ValueError):
+        return None

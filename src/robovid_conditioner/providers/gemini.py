@@ -34,6 +34,7 @@ _RETRY_STATUS = {429, 500, 502, 503, 504}
 _PRICES = {
     "flash-lite": {"input": 0.10, "output": 0.40},
     "2.5-flash": {"input": 0.30, "output": 2.50},
+    "2.5-pro": {"input": 1.25, "output": 10.00},  # ≤200k-token context tier
 }
 
 
@@ -54,18 +55,25 @@ class GeminiProvider(VLMProvider):
         frame_labels: list[int],
         question: str,
         receipt_path: Path,
+        *,
+        frame_captions: list[str] | None = None,
+        temperature: float | None = None,
     ) -> ProviderResponse:
         cached = self._cached(receipt_path) if self.use_cache else None
         if cached is not None:
             return cached
-        image_data = image_to_data_url(make_contact_sheet(frames, frame_labels)).split(",", 1)[1]
+        sheet = make_contact_sheet(frames, frame_labels, captions=frame_captions)
+        image_data = image_to_data_url(sheet).split(",", 1)[1]
         endpoint = GENERATE_URL.format(model=self.model)
         payload = {
             "contents": [{"role": "user", "parts": [
                 {"text": question},
                 {"inlineData": {"mimeType": "image/jpeg", "data": image_data}},
             ]}],
-            "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
+            "generationConfig": {
+                "temperature": 0 if temperature is None else float(temperature),
+                "responseMimeType": "application/json",
+            },
         }
         receipt: dict[str, Any] = {
             "provider": self.name, "model": self.model, "endpoint": endpoint,
@@ -147,6 +155,8 @@ def _estimate_cost(data: dict[str, Any], model: str) -> float | None:
         prices = _PRICES["flash-lite"]
     elif "2.5-flash" in low:
         prices = _PRICES["2.5-flash"]
+    elif "2.5-pro" in low:
+        prices = _PRICES["2.5-pro"]
     if prices is None:
         return None
     inp = int(usage.get("promptTokenCount") or 0)

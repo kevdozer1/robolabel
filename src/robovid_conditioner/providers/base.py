@@ -67,6 +67,9 @@ class VLMProvider(ABC):
         frame_labels: list[int],
         question: str,
         receipt_path: Path,
+        *,
+        frame_captions: list[str] | None = None,
+        temperature: float | None = None,
     ) -> ProviderResponse:
         """Send a contact sheet of ``frames`` and ``question``; write a receipt.
 
@@ -74,6 +77,12 @@ class VLMProvider(ABC):
         the model can refer to them. Implementations must always write a receipt
         to ``receipt_path`` (even on error) and never include raw image bytes in
         it.
+
+        ``frame_captions`` optionally overrides the per-thumbnail caption (the
+        annotation-strategy layer uses this to print index + timestamp on each
+        frame). ``temperature`` optionally overrides the provider's default
+        decoding temperature (used by the self-consistency strategy to draw
+        varied samples); ``None`` keeps the provider's deterministic default.
         """
 
     def observe_then_label(
@@ -84,6 +93,9 @@ class VLMProvider(ABC):
         build_label_question: Callable[[Any], str],
         observe_receipt: Path,
         label_receipt: Path,
+        *,
+        frame_captions: list[str] | None = None,
+        temperature: float | None = None,
     ) -> TwoStageResult:
         """Two-stage flow: first elicit physical observations, then labels.
 
@@ -92,10 +104,12 @@ class VLMProvider(ABC):
         the actual annotation. Grounding the label in a prior observation pass is
         what reduces hallucinated, ungrounded labels.
         """
-        observed = self.ask(frames, frame_labels, observe_question, observe_receipt)
+        observed = self.ask(frames, frame_labels, observe_question, observe_receipt,
+                            frame_captions=frame_captions)
         observations = try_extract_json(observed.answer)
         label_question = build_label_question(observations)
-        labeled = self.ask(frames, frame_labels, label_question, label_receipt)
+        labeled = self.ask(frames, frame_labels, label_question, label_receipt,
+                           frame_captions=frame_captions, temperature=temperature)
         return TwoStageResult(observe=observed, observations=observations, label=labeled)
 
 
@@ -130,16 +144,28 @@ def build_provider(name: str | None = None, model: str | None = None) -> VLMProv
 # --------------------------------------------------------------------------- #
 # Shared helpers
 # --------------------------------------------------------------------------- #
-def make_contact_sheet(frames: list[np.ndarray], frame_labels: list[int], thumb_width: int = 224) -> Image.Image:
-    """Tile keyframes into a labeled contact sheet for a single VLM call."""
+def make_contact_sheet(
+    frames: list[np.ndarray],
+    frame_labels: list[int],
+    thumb_width: int = 224,
+    captions: list[str] | None = None,
+) -> Image.Image:
+    """Tile keyframes into a labeled contact sheet for a single VLM call.
+
+    By default each thumbnail is captioned ``frame {label}``. ``captions`` (one
+    string per frame) overrides that — the strategy layer uses it to stamp the
+    frame index *and* timestamp so the model can return boundaries as concrete
+    frame indices.
+    """
     images: list[Image.Image] = []
-    for frame, label in zip(frames, frame_labels, strict=False):
+    for i, (frame, label) in enumerate(zip(frames, frame_labels, strict=False)):
         img = Image.fromarray(np.asarray(frame).astype("uint8")).convert("RGB")
         ratio = thumb_width / img.width
         img = img.resize((thumb_width, max(1, int(img.height * ratio))))
         canvas = Image.new("RGB", (img.width, img.height + 24), "white")
         canvas.paste(img, (0, 24))
-        ImageDraw.Draw(canvas).text((6, 4), f"frame {label}", fill=(0, 0, 0))
+        caption = captions[i] if captions is not None and i < len(captions) else f"frame {label}"
+        ImageDraw.Draw(canvas).text((6, 4), caption, fill=(0, 0, 0))
         images.append(canvas)
     if not images:
         return Image.new("RGB", (thumb_width, thumb_width), "white")

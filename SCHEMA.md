@@ -7,13 +7,18 @@ other.
 
 ## `annotations.parquet` (VLM output)
 
-Schema version: **`robovid_conditioner/annotations/v1`** (stored in every row's
+Schema version: **`robovid_conditioner/annotations/v2`** (stored in every row's
 `schema_version` column; bump it on any breaking change). Long format — one row
 per record, three record types per episode.
 
+**v2** adds three columns for the annotation-strategy layer: `phase` and
+`boundary_evidence` (per subtask) and `strategy` (per episode). They are optional
+and null under the baseline strategy (S0). **v1 files still read** — the new
+columns are simply absent and treated as null.
+
 | column | type | record types | meaning |
 |---|---|---|---|
-| `schema_version` | str | all | `robovid_conditioner/annotations/v1` |
+| `schema_version` | str | all | `robovid_conditioner/annotations/v2` |
 | `source` | str | all | always `vlm` in this file |
 | `episode_id` | str | all | stable id from the adapter |
 | `task` | str? | all | task string if the dataset has one |
@@ -24,6 +29,8 @@ per record, three record types per episode.
 | `start_frame` | int? | subtask | inclusive start frame |
 | `end_frame` | int? | subtask | inclusive end frame |
 | `subtask_text` | str? | subtask | short action phrase |
+| `phase` | str? | subtask | **v2**; closed-vocabulary phase (S2+), e.g. `approach`/`grasp` |
+| `boundary_evidence` | str? | subtask | **v2**; one-line visual evidence for the boundary (S1+) |
 | `quality` | int? | episode_metadata | curation/training-usefulness, 1–5 |
 | `task_success_quality` | int? | episode_metadata | task-completion score, 1–5 |
 | `mistake` | bool? | episode_metadata | clear visible mistake |
@@ -34,6 +41,7 @@ per record, three record types per episode.
 | `subgoal_image_path` | str? | subgoal | extracted PNG path (if `--no-images` not set) |
 | `provider` | str | all | provider name (gemini/openai/qwen/mock) |
 | `model` | str | all | model id |
+| `strategy` | str? | all | **v2**; annotation strategy name (`S0`..`S4`); null == baseline |
 | `cost_usd` | float? | episode_metadata | estimated cost for this episode's calls |
 | `receipt_path` | str? | episode_metadata | directory of raw per-call receipts |
 
@@ -48,7 +56,9 @@ directory; everything else is reproducible from the same inputs.
 
 ```
 <out>/annotations.parquet
+<out>/strategy.json                                                         # resolved strategy config (provenance)
 <out>/raw_receipts/<episode_id>/{subtasks,metadata}_{observe,label}.json   # raw VLM responses
+<out>/raw_receipts/<episode_id>/refine_b<k>.json                            # S3+ boundary-refinement calls
 <out>/subgoal_frames/<episode_id>_seg<k>_f<frame>.png                       # extracted subgoals
 ```
 

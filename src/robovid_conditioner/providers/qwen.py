@@ -49,19 +49,26 @@ class QwenProvider(VLMProvider):
         frame_labels: list[int],
         question: str,
         receipt_path: Path,
+        *,
+        frame_captions: list[str] | None = None,
+        temperature: float | None = None,
     ) -> ProviderResponse:
-        sheet: Image.Image = make_contact_sheet(frames, frame_labels)
+        sheet: Image.Image = make_contact_sheet(frames, frame_labels, captions=frame_captions)
         messages = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": question}]}]
         receipt: dict[str, Any] = {
             "provider": self.name, "model": self.model, "question": question,
             "frame_labels": list(frame_labels), "local": True,
         }
+        sample = temperature is not None and temperature > 0
+        gen_kwargs = {"do_sample": sample}
+        if sample:
+            gen_kwargs["temperature"] = float(temperature)
         t0 = time.perf_counter()
         try:
             text = self._processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
             inputs = self._processor(text=[text], images=[sheet], return_tensors="pt").to(self._model.device)
             with self._torch.no_grad():
-                generated = self._model.generate(**inputs, max_new_tokens=self.max_new_tokens, do_sample=False)
+                generated = self._model.generate(**inputs, max_new_tokens=self.max_new_tokens, **gen_kwargs)
             trimmed = generated[:, inputs["input_ids"].shape[1]:]
             answer = self._processor.batch_decode(trimmed, skip_special_tokens=True)[0]
             elapsed = time.perf_counter() - t0

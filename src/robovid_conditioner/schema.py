@@ -25,9 +25,10 @@ ANNOTATIONS_FILENAME = "annotations.parquet"
 COLUMNS: list[str] = [
     "schema_version", "source", "episode_id", "task", "num_frames", "fps",
     "record_type", "segment_idx", "start_frame", "end_frame", "subtask_text",
+    "phase", "boundary_evidence",
     "quality", "task_success_quality", "mistake", "boundary_clarity", "control_mode", "reason",
     "subgoal_frame_idx", "subgoal_image_path",
-    "provider", "model", "cost_usd", "receipt_path",
+    "provider", "model", "strategy", "cost_usd", "receipt_path",
 ]
 
 
@@ -37,6 +38,9 @@ class SubtaskSegment:
     start_frame: int
     end_frame: int
     subtask_text: str
+    # v2, populated only by grounded strategies (S1+). Baseline S0 leaves them None.
+    phase: str | None = None       # closed-vocabulary phase label (S2+)
+    evidence: str | None = None    # one-line visual evidence for the boundary (S1+)
 
 
 @dataclass
@@ -71,6 +75,7 @@ class EpisodeAnnotation:
     subgoals: list[Subgoal] = field(default_factory=list)
     cost_usd: float | None = None
     receipts: list[str] = field(default_factory=list)
+    strategy: str | None = None     # annotation strategy name (S0..S4); None == baseline
 
     def to_rows(self) -> list[dict[str, Any]]:
         base = {
@@ -78,6 +83,7 @@ class EpisodeAnnotation:
             "episode_id": self.episode_id, "task": self.task,
             "num_frames": int(self.num_frames), "fps": float(self.fps),
             "provider": self.provider, "model": self.model,
+            "strategy": self.strategy,
         }
         receipt = self.receipts[0] if self.receipts else None
         rows: list[dict[str, Any]] = []
@@ -91,7 +97,8 @@ class EpisodeAnnotation:
         for seg in self.subtasks:
             rows.append({**base, "record_type": "subtask", "segment_idx": seg.segment_idx,
                          "start_frame": seg.start_frame, "end_frame": seg.end_frame,
-                         "subtask_text": seg.subtask_text})
+                         "subtask_text": seg.subtask_text,
+                         "phase": seg.phase, "boundary_evidence": seg.evidence})
         for sg in self.subgoals:
             rows.append({**base, "record_type": "subgoal", "segment_idx": sg.segment_idx,
                          "subgoal_frame_idx": sg.frame_idx, "subgoal_image_path": sg.image_path})
@@ -141,10 +148,14 @@ def episode_records(df: pd.DataFrame, episode_id: str) -> dict[str, Any]:
     ep = df[df["episode_id"].astype(str) == str(episode_id)]
     meta_rows = ep[ep["record_type"] == "episode_metadata"]
     metadata = meta_rows.iloc[0].to_dict() if not meta_rows.empty else {}
+    subtask_cols = ["segment_idx", "start_frame", "end_frame", "subtask_text"]
+    for optional in ("phase", "boundary_evidence"):  # v2; absent in v1 files
+        if optional in ep.columns:
+            subtask_cols.append(optional)
     subtasks = (
         ep[ep["record_type"] == "subtask"]
         .sort_values("segment_idx")
-        [["segment_idx", "start_frame", "end_frame", "subtask_text"]]
+        [subtask_cols]
         .to_dict("records")
     )
     subgoals = (

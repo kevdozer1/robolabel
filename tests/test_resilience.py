@@ -26,11 +26,13 @@ class _FlakyProvider(MockProvider):
         self.fail_on_call = fail_on_call
         self.calls = 0
 
-    def ask(self, frames, frame_labels, question, receipt_path) -> ProviderResponse:
+    def ask(self, frames, frame_labels, question, receipt_path, *,
+            frame_captions=None, temperature=None) -> ProviderResponse:
         self.calls += 1
         if self.calls == self.fail_on_call:
             raise RuntimeError("simulated 503: model overloaded")
-        return super().ask(frames, frame_labels, question, receipt_path)
+        return super().ask(frames, frame_labels, question, receipt_path,
+                            frame_captions=frame_captions, temperature=temperature)
 
 
 def test_one_failed_episode_does_not_lose_the_others(tmp_path: Path):

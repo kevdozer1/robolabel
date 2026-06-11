@@ -7,4 +7,7 @@ and this package gives you the measurement and the human calibration loop.
 
 __version__ = "0.1.0"
 
-SCHEMA_VERSION = "robovid_conditioner/annotations/v1"
+# v2 adds two optional subtask columns (`phase`, `boundary_evidence`) and an
+# episode-level `strategy` column for the annotation-strategy layer. v1 files
+# still read: the new columns are simply absent and treated as null.
+SCHEMA_VERSION = "robovid_conditioner/annotations/v2"

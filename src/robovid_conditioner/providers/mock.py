@@ -29,10 +29,14 @@ class MockProvider(VLMProvider):
         frame_labels: list[int],
         question: str,
         receipt_path: Path,
+        *,
+        frame_captions: list[str] | None = None,
+        temperature: float | None = None,
     ) -> ProviderResponse:
         t0 = time.perf_counter()
-        last = int(max(frame_labels)) if frame_labels else 0
-        answer = _mock_answer(question, last)
+        labels = [int(x) for x in frame_labels] if frame_labels else [0]
+        last = max(labels)
+        answer = _mock_answer(question, last, labels)
         raw = {
             "provider": self.name,
             "model": self.model,
@@ -46,8 +50,40 @@ class MockProvider(VLMProvider):
         return ProviderResponse(answer, raw, self.name, self.model, time.perf_counter() - t0, 0.0)
 
 
-def _mock_answer(question: str, last_frame: int) -> str:
+_MOCK_PHASES = ["approach", "grasp", "transport", "retract"]
+
+
+def _mock_answer(question: str, last_frame: int, labels: list[int] | None = None) -> str:
     q = question.lower()
+    # Markers below are unique substrings of each prompt's requested JSON shape, so
+    # the mock answers the right shape without colliding (e.g. the frame manifest
+    # text "exact frame index" must NOT be read as a refinement request).
+    #
+    # Boundary refinement (S3): the refine prompt is the only one asking for a
+    # "single integer frame index"; return the centre of the dense window.
+    if "single integer frame index" in q:
+        window = labels or [last_frame]
+        return json.dumps({"frame": int(window[len(window) // 2])})
+    # Grounded segmentation (S1+): the only prompt asking for per-segment end_frame
+    # + phase together. Checked before the "events" marker, because the stage-one
+    # events list is embedded into this prompt as the observations block.
+    if "end_frame" in q and "phase" in q:
+        quarters = _even_segments(last_frame, 4)
+        return json.dumps(
+            {
+                "segments": [
+                    {"segment_idx": i, "start_frame": s, "end_frame": e,
+                     "phase": _MOCK_PHASES[i], "subtask_text": f"{_MOCK_PHASES[i]} the object",
+                     "evidence": f"mock evidence: {_MOCK_PHASES[i]} visible near frame {e}"}
+                    for i, (s, e) in enumerate(quarters)
+                ]
+            }
+        )
+    # Grounded stage-one (S1+): asks for an "events" list, no end_frame/phase.
+    if '"events"' in q:
+        events = [{"frame": int(last_frame * f), "evidence": f"mock {p} event"}
+                  for p, f in zip(_MOCK_PHASES, (0.25, 0.5, 0.75, 1.0), strict=False)]
+        return json.dumps({"events": events, "objects": ["object", "destination"]})
     if "observ" in q and "subtask" not in q and "quality" not in q:
         return json.dumps(
             {

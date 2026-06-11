@@ -43,15 +43,20 @@ class OpenAIProvider(VLMProvider):
         frame_labels: list[int],
         question: str,
         receipt_path: Path,
+        *,
+        frame_captions: list[str] | None = None,
+        temperature: float | None = None,
     ) -> ProviderResponse:
-        image_url = image_to_data_url(make_contact_sheet(frames, frame_labels))
-        payload = {
+        image_url = image_to_data_url(make_contact_sheet(frames, frame_labels, captions=frame_captions))
+        payload: dict[str, Any] = {
             "model": self.model,
             "input": [{"role": "user", "content": [
                 {"type": "input_text", "text": question},
                 {"type": "input_image", "image_url": image_url, "detail": "high"},
             ]}],
         }
+        if temperature is not None:
+            payload["temperature"] = float(temperature)
         receipt: dict[str, Any] = {
             "provider": self.name, "model": self.model, "endpoint": RESPONSES_URL,
             "question": question, "frame_labels": list(frame_labels),

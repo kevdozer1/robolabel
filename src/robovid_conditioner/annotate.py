@@ -15,8 +15,8 @@ import pandas as pd
 
 from .episode import Episode, EpisodeSource
 from .labelers.metadata import label_metadata
+from .labelers.segmentation import segment_episode
 from .labelers.subgoals import derive_subgoals, extract_subgoal_images
-from .labelers.subtasks import label_subtasks
 from .providers.base import VLMProvider
 from .rubric import Rubric, load_rubric
 from .schema import (
@@ -26,6 +26,7 @@ from .schema import (
     read_annotations,
     to_dataframe,
 )
+from .strategy import StrategyConfig, load_strategy
 
 
 def annotate_episode(
@@ -35,10 +36,16 @@ def annotate_episode(
     out_dir: Path,
     *,
     extract_images: bool = True,
+    strategy: StrategyConfig | None = None,
 ) -> EpisodeAnnotation:
-    """Annotate a single episode: subtasks, metadata, subgoals."""
+    """Annotate a single episode: subtasks, metadata, subgoals.
+
+    ``strategy`` selects the segmentation strategy (defaults to S0 baseline). It
+    only affects subtask boundaries; metadata and subgoal derivation are unchanged.
+    """
+    strategy = strategy or load_strategy(None)
     receipt_dir = out_dir / "raw_receipts" / episode.episode_id
-    subtasks = label_subtasks(episode, provider, rubric, receipt_dir)
+    subtasks = segment_episode(episode, provider, rubric, strategy, receipt_dir)
     metadata = label_metadata(episode, provider, rubric, receipt_dir)
     subgoals = derive_subgoals(subtasks.segments, episode.num_frames, rubric.subgoal_source)
     if extract_images and subgoals:
@@ -58,6 +65,7 @@ def annotate_episode(
         subgoals=subgoals,
         cost_usd=round(sum(costs), 8) if costs else None,
         receipts=[str(receipt_dir)],
+        strategy=strategy.name,
     )
 
 
@@ -71,6 +79,7 @@ def annotate_source(
     limit: int | None = None,
     progress: Callable[[int, int, str], None] | None = None,
     resume: bool = True,
+    strategy: StrategyConfig | None = None,
 ) -> list[EpisodeAnnotation]:
     """Annotate every episode in ``source`` and write ``annotations.parquet``.
 
@@ -95,7 +104,12 @@ def annotate_source(
         The episode annotations produced in this run (excludes resumed ones).
     """
     rubric = rubric or load_rubric()
+    strategy = strategy or load_strategy(None)
     out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "strategy.json").write_text(
+        json.dumps(strategy.provenance(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     total = len(source) if limit is None else min(limit, len(source))
 
     existing_df = None
@@ -117,7 +131,8 @@ def annotate_source(
         if progress is not None:
             progress(i, total, episode.episode_id)
         try:
-            ann = annotate_episode(episode, provider, rubric, out, extract_images=extract_images)
+            ann = annotate_episode(episode, provider, rubric, out,
+                                   extract_images=extract_images, strategy=strategy)
         except Exception as exc:  # noqa: BLE001 - one bad episode must not sink the run
             failures.append({"episode_id": episode.episode_id, "error": str(exc)[:500]})
             if progress is not None:

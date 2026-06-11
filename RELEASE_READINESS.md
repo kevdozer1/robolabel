@@ -39,11 +39,32 @@ smoke-tested, what is missing, and what to fix first.
   ~0.05 s each). Human edits land in the gold block; the VLM auto labels are
   never touched.
 - **Gate.** Collapsed-score, repeated-text, object-grounding, and score↔reason
-  contradiction flags, thresholds from the rubric. Tested.
-- **Quality bar.** `ruff` clean; 30 tests pass on Python 3.10; CI matrix 3.10/3.12.
+  contradiction flags, plus the failure-band detectors (degenerate single-segment,
+  near-uniform split) and the quality-outlier `needs_review` policy. The gate is
+  advisory: it flags, never drops (`dropped_episode_count` always 0). Thresholds
+  from the rubric. Tested.
+- **Annotation strategy layer (S0–S4).** Config-selectable (`--strategy`),
+  cumulative grounding → closed phase vocabulary + min granularity → dense-window
+  boundary refinement → self-consistency. Off by default (S0 baseline is
+  bit-for-bit reproducible); resolved config recorded in `strategy.json`; schema
+  bumped to v2 (adds `phase`, `boundary_evidence`, `strategy`; v1 still reads).
+  Schema validation, detectors, strategy configs, and S0–S4 segmentation are
+  tested offline with the mock provider; the grounded prompts live in
+  `rubric.yaml`. **The live SO-101 ablation (the actual numbers) is pending — see
+  "Smoke-tested / unverified only".**
+- **Strategy eval harness.** `scripts/eval_strategies.py` scores every
+  (strategy, model) cell with the existing `reliability_report` against the frozen
+  `eval/so101_split.json` (30 tune / 20 test, seeded). Its scoring plumbing has an
+  offline `--self-test`; the pure scoring functions are unit-tested.
+- **Quality bar.** `ruff` clean; 56 tests pass on Python 3.10; CI matrix 3.10/3.12.
 
 ## Smoke-tested / unverified only
 
+- **Strategy ablation numbers (STRATEGY_REPORT.md).** The S0–S4 strategy *system*
+  is built and tested offline; the live SO-101 ablation that fills the
+  strategy × model tables (Gemini Flash + a stronger model, on the frozen
+  tune/test split) has not been run yet. The methodology and protocol are written;
+  the result tables are marked pending. Run `scripts/eval_strategies.py` to fill them.
 - **Live OpenAI calls.** The Responses-API request/response handling is written
   against the documented shape but has not been run against the live API (only
   Gemini was dogfooded). Verify before claiming OpenAI support.

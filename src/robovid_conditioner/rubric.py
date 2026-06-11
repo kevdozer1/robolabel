@@ -81,6 +81,46 @@ class Rubric:
     def subgoal_source(self) -> str:
         return str(self.data.get("subgoals", {}).get("source", "subtask_end"))
 
+    # --- strategies (grounded segmentation, S1+) -------------------------- #
+    @property
+    def _strategies(self) -> dict[str, Any]:
+        return self.data.get("strategies", {})
+
+    @property
+    def phase_vocabulary(self) -> list[str]:
+        return [str(p).strip().lower() for p in self._strategies.get(
+            "phase_vocabulary", ["approach", "grasp", "transport", "release-place", "retract", "other"])]
+
+    @property
+    def strategy_min_segments(self) -> int:
+        return int(self._strategies.get("min_segments", 3))
+
+    @property
+    def strategy_max_segments(self) -> int:
+        return int(self._strategies.get("max_segments", 6))
+
+    def grounded_observe_prompt(self, *, task: str, frame_manifest: str) -> str:
+        return _fill(self._strategies["grounded_observe_prompt"],
+                     task=task, frame_manifest=frame_manifest)
+
+    def grounded_label_prompt(self, *, task: str, last_frame: int, observations: str,
+                              frame_manifest: str) -> str:
+        return _fill(
+            self._strategies["grounded_label_prompt"],
+            task=task, last_frame=last_frame, observations=observations,
+            frame_manifest=frame_manifest,
+            min_segments=self.strategy_min_segments, max_segments=self.strategy_max_segments,
+            phase_vocabulary=", ".join(self.phase_vocabulary),
+        )
+
+    def refine_prompt(self, *, task: str, phase_before: str, phase_after: str,
+                      boundary_evidence: str, frame_manifest: str) -> str:
+        return _fill(
+            self._strategies["refine_prompt"],
+            task=task, phase_before=phase_before, phase_after=phase_after,
+            boundary_evidence=boundary_evidence, frame_manifest=frame_manifest,
+        )
+
     # --- gate ------------------------------------------------------------- #
     @property
     def gate(self) -> dict[str, Any]:

@@ -85,6 +85,72 @@ subgoals:
   # last frame of each subtask segment (the achieved sub-state).
   source: subtask_end
 
+# ---------------------------------------------------------------------------- #
+# Annotation strategies (the boundary-quality layer).
+#
+# These prompts drive the grounded segmentation strategies (S1+). The strategy
+# *presets* (frame count, refinement, self-consistency) live in strategy.py; the
+# language the model sees lives here so it stays config, not code. Baseline S0
+# does not use this section at all — it uses `subtasks.*` above, unchanged.
+# ---------------------------------------------------------------------------- #
+strategies:
+  # Closed phase vocabulary for tabletop pick-and-place. The grounded label call
+  # must assign each segment one of these; anything else is coerced to "other".
+  phase_vocabulary: [approach, grasp, transport, release-place, retract, other]
+  # Granularity floor: grounded strategies reject a segmentation with fewer than
+  # this many segments (the degenerate "complete the task" single-segment output).
+  min_segments: 3
+  max_segments: 6
+  # Stage one for grounded segmentation: physical evidence only, no labels.
+  grounded_observe_prompt: |
+    You are observing a robot manipulation episode before segmenting it.
+    Task: {task}
+    The contact sheet shows numbered keyframes. Each frame is captioned with its
+    exact frame index and timestamp:
+    {frame_manifest}
+    Describe ONLY physical evidence and name the frame index where each event is
+    first visible: object contact, gripper close, lift-off, arrival over the
+    destination, release, and retract. Do not assign subtask labels yet.
+    Return ONLY valid JSON:
+    {"events":[{"frame":12,"evidence":"gripper closes on the brick"}],"objects":["brick","box"]}
+  # Stage two: grounded, frame-indexed, closed-vocabulary segmentation.
+  grounded_label_prompt: |
+    Segment this robot manipulation episode into {min_segments} to {max_segments}
+    temporally-ordered subtasks. This is tabletop pick-and-place; a normal episode
+    has at least {min_segments} phases, NOT a single "complete the task" segment.
+    Task: {task}
+    The contact sheet frames are captioned with their exact frame index and
+    timestamp:
+    {frame_manifest}
+    Stage-one physical events:
+    {observations}
+    For each subtask return:
+      - "phase": exactly one of {phase_vocabulary}
+      - "end_frame": the integer frame index (from the captions above) where this
+        subtask ends and the next begins — choose the frame where the transition
+        is actually visible, not an even division of the episode
+      - "evidence": one short clause naming the visible event at that boundary
+        (e.g. "gripper contacts brick", "brick released inside box")
+      - "subtask_text": a short action phrase naming the object/destination
+    Boundaries must be strictly increasing frame indices, contiguous, and cover
+    the whole episode (frames 0 through {last_frame}). Do not return a single
+    segment. Do not place boundaries at uniform fractions of the duration.
+    Return ONLY valid JSON:
+    {"segments":[{"phase":"approach","end_frame":40,"evidence":"gripper above brick","subtask_text":"move to the brick"}]}
+  # Dense-window refinement (S3): pin one boundary to its exact transition frame.
+  refine_prompt: |
+    Find the EXACT frame where one subtask transition happens in a robot
+    manipulation episode.
+    Task: {task}
+    The transition is: end of "{phase_before}" -> start of "{phase_after}".
+    Visible event at this boundary: {boundary_evidence}
+    The contact sheet shows consecutive frames around the candidate boundary, each
+    captioned with its exact frame index and timestamp:
+    {frame_manifest}
+    Return the single integer frame index where the event first becomes true.
+    Return ONLY valid JSON:
+    {"frame":137}
+
 gate:
   # A collapsed score distribution (e.g. every episode scored 5) is a red flag that
   # the VLM is not discriminating. Flag when distinct quality scores are too few.
@@ -93,3 +159,15 @@ gate:
   flag_repeated_subtask_text: true
   flag_object_grounding: true
   flag_score_reason_contradiction: true
+  # Failure-band detectors (from the SO-101 eval). The gate FLAGS these; it never
+  # drops an episode. See the README "What the gate does and does not do".
+  flag_degenerate_single_segment: true   # band (a): single "complete the task" segment
+  flag_uniform_split: true               # band (b): boundaries at uniform fractions
+  # Coefficient of variation (std/mean) of segment lengths below this == near-uniform.
+  uniform_split_cv_threshold: 0.12
+  min_segments_for_uniform_check: 3
+  # Quality-score outlier policy: a score this many points (or more) below the
+  # dataset's neighborhood (median) is flagged needs_review, never dropped. This
+  # catches hallucinated low scores on good episodes (SO-101 eps 45/46: auto=1).
+  flag_quality_outlier: true
+  quality_outlier_margin: 2

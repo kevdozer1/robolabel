@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+import statistics
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -66,6 +67,11 @@ class GateReport:
     issues: tuple[GateIssue, ...]
     episode_count: int
     quality_counts: dict[int, int]
+    band_counts: dict[str, int] = field(default_factory=dict)
+
+    # The gate is advisory only. It flags episodes; it never removes them from the
+    # annotation set. This count is always 0 and is reported to make that explicit.
+    dropped_episode_count: int = 0
 
     def to_text(self) -> str:
         lines = [
@@ -73,11 +79,17 @@ class GateReport:
             f"Episodes checked: {self.episode_count}",
             f"Quality score counts: {self.quality_counts}",
         ]
+        if self.band_counts:
+            lines.append(f"Failure-band counts: {self.band_counts}")
         if self.issues:
             lines.append(f"Flags ({len(self.issues)}):")
             lines.extend(f"- {issue.format()}" for issue in self.issues)
         else:
             lines.append("No automatic flags. (This does not mean the labels are correct.)")
+        lines.append(
+            f"Episodes dropped by the gate: {self.dropped_episode_count} "
+            "(the gate only flags; it never drops episodes)."
+        )
         return "\n".join(lines)
 
 
@@ -91,7 +103,11 @@ def run_gate(annotations_dir: str | Path, rubric: Rubric | None = None) -> GateR
 
     issues: list[GateIssue] = []
     quality_values: list[int] = []
+    quality_by_episode: dict[str, int] = {}
+    band_counts = {"degenerate_single_segment": 0, "uniform_split": 0}
     episode_ids = list_episode_ids(df)
+    cv_threshold = float(gate_cfg.get("uniform_split_cv_threshold", 0.12))
+    min_seg_uniform = int(gate_cfg.get("min_segments_for_uniform_check", 3))
     for episode_id in episode_ids:
         rec = episode_records(df, episode_id)
         metadata = rec["metadata"]
@@ -100,6 +116,7 @@ def run_gate(annotations_dir: str | Path, rubric: Rubric | None = None) -> GateR
         quality = _safe_int(metadata.get("quality"))
         if quality is not None:
             quality_values.append(quality)
+            quality_by_episode[episode_id] = quality
 
         if gate_cfg.get("flag_repeated_subtask_text", True):
             texts = [str(s.get("subtask_text", "")).strip().lower() for s in subtasks if s.get("subtask_text")]
@@ -112,6 +129,16 @@ def run_gate(annotations_dir: str | Path, rubric: Rubric | None = None) -> GateR
         if gate_cfg.get("flag_score_reason_contradiction", True):
             issues.extend(_score_reason_issues(episode_id, metadata))
 
+        # Failure-band detectors (boundary quality).
+        if gate_cfg.get("flag_degenerate_single_segment", True) and is_degenerate_single_segment(subtasks):
+            band_counts["degenerate_single_segment"] += 1
+            issues.append(GateIssue(episode_id, "degenerate_single_segment",
+                                    "a single subtask spans the whole episode"))
+        elif gate_cfg.get("flag_uniform_split", True) and is_uniform_split(subtasks, cv_threshold, min_seg_uniform):
+            band_counts["uniform_split"] += 1
+            issues.append(GateIssue(episode_id, "uniform_split",
+                                    "segment lengths are near-uniform (boundaries not grounded to frames)"))
+
     quality_counts = _counts(quality_values)
     min_distinct = int(gate_cfg.get("min_distinct_quality_scores", 2))
     min_episodes = int(gate_cfg.get("min_episodes_for_dispersion", 8))
@@ -122,12 +149,59 @@ def run_gate(annotations_dir: str | Path, rubric: Rubric | None = None) -> GateR
             f"across {len(quality_values)} episodes",
         ))
 
+    # Quality-score outlier policy: a score this many points or more below the
+    # dataset neighborhood (median) is flagged needs_review — NOT dropped. This
+    # catches hallucinated low scores on otherwise-good episodes.
+    if gate_cfg.get("flag_quality_outlier", True) and len(quality_values) >= 3:
+        margin = int(gate_cfg.get("quality_outlier_margin", 2))
+        neighborhood = statistics.median(quality_values)
+        for episode_id, q in quality_by_episode.items():
+            if neighborhood - q >= margin:
+                issues.append(GateIssue(
+                    episode_id, "quality_outlier_needs_review",
+                    f"quality {q} is >= {margin} below the dataset median {neighborhood:g}; needs_review",
+                ))
+
     return GateReport(
         passed=not issues,
         issues=tuple(issues),
         episode_count=len(episode_ids),
         quality_counts=quality_counts,
+        band_counts=band_counts,
     )
+
+
+def _segment_lengths(subtasks: list[dict[str, Any]]) -> list[int]:
+    lengths: list[int] = []
+    for s in subtasks:
+        start = _safe_int(s.get("start_frame"))
+        end = _safe_int(s.get("end_frame"))
+        if start is not None and end is not None:
+            lengths.append(end - start + 1)
+    return lengths
+
+
+def is_degenerate_single_segment(subtasks: list[dict[str, Any]]) -> bool:
+    """Band (a): the VLM collapsed the episode into one "complete the task" segment."""
+    return len(subtasks) <= 1
+
+
+def is_uniform_split(subtasks: list[dict[str, Any]], cv_threshold: float = 0.12,
+                     min_segments: int = 3) -> bool:
+    """Band (b): segment lengths are near-uniform (boundaries at fixed fractions).
+
+    Measured by the coefficient of variation (std/mean) of segment lengths. Equal
+    segments give CV 0; a CV below ``cv_threshold`` means the model never grounded
+    the boundaries to the video. Only checked for episodes with enough segments.
+    """
+    lengths = _segment_lengths(subtasks)
+    if len(lengths) < min_segments:
+        return False
+    mean = statistics.mean(lengths)
+    if mean <= 0:
+        return False
+    cv = statistics.pstdev(lengths) / mean
+    return cv < cv_threshold
 
 
 def _object_grounding_issues(

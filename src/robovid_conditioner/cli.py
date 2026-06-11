@@ -1,7 +1,7 @@
 """``robovid_conditioner`` command-line interface.
 
     robovid_conditioner annotate    run the VLM labelers over a dataset -> annotations.parquet
-    robovid_conditioner review      open the Streamlit calibration GUI (human labels)
+    robovid_conditioner review      open the browser calibration GUI (human labels)
     robovid_conditioner reliability VLM-vs-human agreement report from a gold file
     robovid_conditioner gate        automatic red-flag check on an annotation set
     robovid_conditioner export      consolidated JSONL view of the sidecar
@@ -30,6 +30,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--provider", default=None, help="Provider name (mock|gemini|openai|qwen).")
     p.add_argument("--model", default=None)
     p.add_argument("--rubric", default=None, help="Path to a rubric.yaml (defaults to bundled).")
+    p.add_argument("--strategy", default="S0",
+                   help="Annotation strategy: S0 (baseline, default) .. S4, or a strategy JSON path.")
     p.add_argument("--limit", type=int, default=None, help="Annotate at most N episodes.")
     p.add_argument("--camera-key", default=None, help="LeRobot camera key (defaults to the first).")
     p.add_argument("--fps", type=float, default=10.0, help="Directory adapter default fps.")
@@ -72,6 +74,7 @@ def _annotate(args) -> int:
     from .annotate import annotate_source
     from .providers.base import MissingCredentialError, build_provider
     from .rubric import load_rubric
+    from .strategy import load_strategy
 
     kwargs: dict = {}
     if args.source == "lerobot" and args.camera_key:
@@ -89,6 +92,7 @@ def _annotate(args) -> int:
         print(str(exc), file=sys.stderr)
         return 2
     rubric = load_rubric(args.rubric)
+    strategy = load_strategy(args.strategy)
 
     def progress(i: int, total: int, episode_id: str) -> None:
         print(f"[{i + 1}/{total}] {episode_id}", file=sys.stderr)
@@ -96,12 +100,14 @@ def _annotate(args) -> int:
     annotations = annotate_source(
         source, args.out, provider=provider, rubric=rubric,
         extract_images=not args.no_images, limit=args.limit, progress=progress,
+        strategy=strategy,
     )
     print(json.dumps({
         "out_dir": str(args.out),
         "annotations_parquet": str(Path(args.out) / "annotations.parquet"),
         "episodes": len(annotations),
         "provider": provider.name, "model": provider.model,
+        "strategy": strategy.name,
     }, indent=2))
     return 0
 
