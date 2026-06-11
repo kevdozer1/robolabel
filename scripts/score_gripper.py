@@ -25,9 +25,8 @@ from statistics import mean
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import numpy as np  # noqa: E402
-
 import eval_strategies as ev  # noqa: E402
+import numpy as np  # noqa: E402
 
 from robovid_conditioner.labelers.gripper_baseline import segment_from_state  # noqa: E402
 from robovid_conditioner.rubric import load_rubric  # noqa: E402
