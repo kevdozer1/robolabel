@@ -27,5 +27,10 @@ raw_receipts/
 subgoal_frames/
 demo_out/
 
+# strategy-ablation working dir (large, regenerable: receipts, per-cell segments).
+# The committed artifacts are STRATEGY_REPORT.md and eval/so101_split.json; the
+# machine results JSONs are copied into the report.
+eval_out/
+
 # OS
 .DS_Store
