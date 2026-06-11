@@ -27,3 +27,12 @@ Merge `eval_out_grip/results_tune.json` (proprioceptive gripper-event baseline) 
 the tune table as the **free / zero-API baseline row**, and run its single test cell
 alongside the chosen VLM cell. If S_grip matches or beats the VLM boundary IoU on this
 dataset, say so plainly in both the report and the README — that honesty is the point.
+
+**Measured (tune, 30 eps, zero-API):** S_grip boundary IoU **0.204**, subgoal agreement
+**0.060**, mean 4.27 segments, 0 degenerate / 0 uniform, $0/episode. This is **below**
+the VLM strategies (S0-Flash 0.40, S3-Flash 0.43): gripper-close / EE-pause events fire
+where the robot *acts*, which is several frames off from where a human draws the
+*visual-semantic* subtask boundary. Report it as the honest free baseline that the VLM
+beats on this clean dataset — and run S_grip's single TEST cell alongside the chosen VLM
+cell during the test phase (`scripts/score_gripper.py --phase test`). Do NOT tune the
+`gripper_baseline` thresholds to flatter the number; they stay at the rubric defaults.

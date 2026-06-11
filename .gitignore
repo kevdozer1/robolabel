@@ -31,6 +31,7 @@ demo_out/
 # The committed artifacts are STRATEGY_REPORT.md and eval/so101_split.json; the
 # machine results JSONs are copied into the report.
 eval_out/
+eval_out_grip/
 
 # OS
 .DS_Store

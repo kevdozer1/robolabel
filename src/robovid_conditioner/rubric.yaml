@@ -151,6 +151,18 @@ strategies:
     Return ONLY valid JSON:
     {"frame":137}
 
+# Proprioceptive gripper-event baseline (S_grip): a zero-API segmentation derived
+# from the robot's own gripper + arm-joint signals, scored alongside the VLM
+# strategies as the free baseline. Boundaries come from gripper open/close
+# transitions and end-effector-speed pauses; phases are assigned from the closed
+# vocabulary by event order.
+gripper_baseline:
+  gripper_norm_threshold: 0.5     # closed/open split on min-max-normalized gripper.pos
+  min_transition_frames: 8        # debounce: ignore gripper flips closer than this
+  ee_smooth_window: 5             # frames for moving-average smoothing of EE speed
+  ee_pause_window: 40             # look this many frames before a gripper event for the arm pause
+  min_segment_frames: 5           # drop boundaries that would make a segment shorter than this
+
 gate:
   # A collapsed score distribution (e.g. every episode scored 5) is a red flag that
   # the VLM is not discriminating. Flag when distinct quality scores are too few.

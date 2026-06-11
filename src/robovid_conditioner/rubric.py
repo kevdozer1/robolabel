@@ -126,6 +126,11 @@ class Rubric:
     def gate(self) -> dict[str, Any]:
         return dict(self.data.get("gate", {}))
 
+    # --- proprioceptive gripper baseline (S_grip) ------------------------- #
+    @property
+    def gripper_baseline(self) -> dict[str, Any]:
+        return dict(self.data.get("gripper_baseline", {}))
+
 
 def _fill(template: str, **values: object) -> str:
     """Substitute ``{key}`` placeholders without touching literal JSON braces.
