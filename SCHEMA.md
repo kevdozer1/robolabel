@@ -94,9 +94,33 @@ The reliability report compares `auto` vs `gold` per episode and aggregates:
 subtask boundary temporal IoU, quality exact / within-one agreement, subgoal frame
 agreement.
 
-## Optional LeRobot write-back
+## LeRobot subtask-convention export
 
-Writing annotations back into a LeRobot dataset's own metadata is a planned
-capability, gated on the pinned LeRobot format supporting per-episode annotation
-fields cleanly. Until then, the parquet sidecar + `robovid_conditioner export` (JSONL) are
-the portable outputs. See `RELEASE_READINESS.md`.
+`export --format lerobot` writes our subtask segments into the **subtask convention
+the pinned lerobot (0.4.x) actually reads back** — verified against the installed
+source, not guessed. Two files under `<out>/meta/`:
+
+| file | schema | matches |
+|---|---|---|
+| `meta/subtasks.parquet` | **string-indexed** table (index = subtask phrase), one column `subtask_index` (0..N-1) | mirrors `meta/tasks.parquet` exactly; `LeRobotDataset` resolves a frame's subtask via `meta.subtasks.iloc[subtask_index].name` |
+| `meta/episodes_subtasks.parquet` | one row per episode: `subtask_indices`, `subtask_names`, `subtask_start_frames`, `subtask_end_frames`, `subtask_start_times`, `subtask_end_times` | the per-frame `subtask_index` column is reconstructable from this (we don't rewrite the binary `data/` parquet); the `subtask_*` columns are SARM-compatible |
+
+Pick the subtask string with `--subtask-field {subtask_text,phase}` (default
+`subtask_text`).
+
+**What survives the export:** the subtask temporal boundaries and the subtask phrase.
+
+**What stays sidecar-only** (the LeRobot subtask convention has no slot for it): the
+per-boundary `boundary_evidence`, the closed-vocabulary `phase` tag, the episode
+`quality` / `task_success_quality` / `mistake` / `reason`, the provider receipts, and
+`cost_usd`. The `annotations.parquet` sidecar remains the full-fidelity record.
+
+**Not emitted:** `meta/tasks_high_level.parquet` and `task_index_high_level` are part
+of the separate **LeRobot Annotate** GUI (`huggingface/lerobot-annotate`) and a newer
+lerobot than the pinned 0.4.x core; they are intentionally not written. The round-trip
+test (`tests/test_export_lerobot.py`) reloads `meta/subtasks.parquet` through lerobot's
+own `load_subtasks` and confirms every frame's `subtask_index` resolves to the subtask
+segment it falls in.
+
+The parquet sidecar + `export --format jsonl` remain the portable, full-fidelity
+outputs. See `RELEASE_READINESS.md`.

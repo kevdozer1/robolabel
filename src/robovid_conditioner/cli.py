@@ -54,9 +54,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--annotations", required=True)
     p.add_argument("--rubric", default=None)
 
-    p = sub.add_parser("export", help="Consolidated JSONL view of the sidecar.")
+    p = sub.add_parser("export", help="Export the sidecar (JSONL, or the LeRobot subtask convention).")
     p.add_argument("--annotations", required=True)
     p.add_argument("--out", required=True)
+    p.add_argument("--format", choices=["jsonl", "lerobot"], default="jsonl",
+                   help="jsonl = consolidated per-episode view; lerobot = meta/subtasks.parquet "
+                        "+ per-episode subtask boundaries (the pinned-lerobot subtask convention).")
+    p.add_argument("--subtask-field", default="subtask_text",
+                   help="Which field becomes the LeRobot subtask string (subtask_text|phase).")
 
     p = sub.add_parser("cost", help="Cost / receipt accounting.")
     p.add_argument("--annotations", required=True)
@@ -142,6 +147,12 @@ def _gate(args) -> int:
 
 
 def _export(args) -> int:
+    if args.format == "lerobot":
+        from .export_lerobot import export_lerobot_subtasks
+
+        manifest = export_lerobot_subtasks(args.annotations, args.out, subtask_field=args.subtask_field)
+        print(json.dumps(manifest, indent=2))
+        return 0
     from .schema import export_jsonl
 
     out = export_jsonl(args.annotations, args.out)
