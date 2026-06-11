@@ -93,6 +93,30 @@ smoke-tested, what is missing, and what to fix first.
   price table; OpenAI reports no dollar cost (token counts only, in receipts).
   Prices drift; treat the dollar number as indicative and audit via receipts.
 
+## Fixed while building the strategy layer
+
+Caught and fixed during the offline build + zero-cost preflight (each with a test
+or a verification step), recorded here so the live run starts from a known-good base:
+
+- **Mock prompt-marker collision.** The offline mock matched the refinement prompt
+  on the manifest text "exact frame index", and matched the grounded-label prompt's
+  embedded stage-one `events` block — both made S1–S4 fall back to one segment.
+  Fixed with unique markers (`single integer frame index`; `end_frame`+`phase`
+  before `events`); covered by the offline S1–S4 segmentation tests.
+- **`ask()` signature change broke a test double.** Adding `frame_captions`/
+  `temperature` broke `test_resilience`'s `_FlakyProvider`; updated to the new
+  keyword-only contract.
+- **Windows temp-file handle.** The scorer's `mkstemp` left an open fd, so
+  `reliability_report` could not unlink it on Windows; close the fd first.
+- **B023 late-binding closures** in the per-episode retry wrapper; bound via default
+  args. **Py3.10 f-string** nesting in the selection rationale; precomputed.
+- **Gemini Pro pricing** was absent from the cost table (Pro cost would read as
+  `None`); added the 2.5-pro tier so the budget gate and `$/episode` are real.
+
+The live-provider path is **dogfooded at single-run scale** (the earlier 50-episode
+Gemini Flash annotate) but **not yet exercised at ablation scale** — that is exactly
+what `scripts/run_ablation.py` does once the credential is present.
+
 ## First three issues to file
 
 1. **Verify the OpenAI and Qwen providers end to end.** Gemini is dogfooded; do a
