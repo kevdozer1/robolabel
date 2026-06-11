@@ -45,7 +45,12 @@ class StrategyConfig:
     # output schema
     grounded: bool = False            # S1+: frame-index boundaries + per-boundary evidence
     closed_vocabulary: bool = False   # S2+: phase constrained to rubric vocabulary
-    enforce_min_segments: bool = False  # S2+: reject degenerate single-segment outputs
+    enforce_min_segments: bool = False  # S2+: apply a minimum-granularity floor
+    # What to do when a grounded answer is below the floor. "warn" (default): accept it,
+    # flag it as a single_segment_candidate (the human ep7 case — some episodes really are
+    # one segment). "reject": re-prompt then fall back (the behavior the ablation was run
+    # under; set this to reproduce STRATEGY_REPORT.md exactly).
+    min_granularity_policy: str = "warn"
     max_label_attempts: int = 1       # re-prompts when grounded validation fails
     # post-passes
     refine_boundaries: bool = False   # S3+: dense-window per-boundary refinement

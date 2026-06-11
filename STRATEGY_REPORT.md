@@ -55,8 +55,11 @@ gate detectors:
 | **S_grip** | **free, zero-API** proprioceptive baseline: boundaries from gripper open/close + end-effector-speed pauses, phases by event order | (reference floor) |
 
 Resolved configs in `src/robovid_conditioner/strategy.py`; grounded prompts in
-`rubric.yaml`. (Note: the grounded re-prompt cap is ≤2 re-prompts per label pass,
-within the operating guardrail.)
+`rubric.yaml`. (Note: the grounded re-prompt cap is ≤2 re-prompts per label pass, within
+the operating guardrail. The ablation was run under the prior **hard-reject**
+min-granularity policy; the shipped default is now `warn` — set
+`min_granularity_policy="reject"` to reproduce these numbers exactly. The difference is
+immaterial here: grounded cells had 0 degenerate episodes.)
 
 ---
 
@@ -355,6 +358,17 @@ was fooled.)
   artifact as "the tool's real capability."
 
 ---
+
+## Recommended defaults
+
+From these results (SO-101; re-measure on your data):
+
+| use case | pick | why |
+|---|---|---|
+| **default** | **S2 on Flash** (~$0.018/ep) | cheapest grounded cell; IoU-parity with S0; **0 failure-band episodes**; best boundary placement at that price; `warn` granularity avoids force-over-segmenting single-segment episodes |
+| **quality gating matters** | **Pro** (any grounded strat) | catastrophic quality false-negatives 3→1 (tune); worth ~4× cost if you filter by auto quality |
+| **cheapest, reproducible** | **S0** | the original baseline; fine when only coarse mean IoU matters |
+| **free floors (not labels)** | S_grip / uniform-fifths | $0; sanity references the VLM clears by ~0.10–0.25 IoU; do not ship as annotations |
 
 ## Verdict
 

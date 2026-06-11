@@ -141,6 +141,59 @@ def test_segment_episode_offline_contiguous_full_coverage(strategy: str, tmp_pat
         assert len(segs) >= rubric.strategy_min_segments  # granularity floor met
 
 
+class _SingleSegProvider:
+    """Fake provider that always returns a single grounded segment (below the floor)."""
+    name = "single"
+    model = "single"
+
+    def ask(self, frames, frame_labels, question, receipt_path, *, frame_captions=None, temperature=None):
+        import json
+
+        from robovid_conditioner.providers.base import ProviderResponse, write_receipt
+        q = question.lower()
+        last = int(max(frame_labels)) if frame_labels else 0
+        # grounded-label check before events (the label prompt embeds the observe events).
+        if "end_frame" in q and "phase" in q:
+            ans = json.dumps({"segments": [{"phase": "other", "end_frame": last,
+                                            "evidence": "one continuous action", "subtask_text": "do the whole task"}]})
+        elif '"events"' in q:
+            ans = json.dumps({"events": [{"frame": last // 2, "evidence": "e"}], "objects": ["o"]})
+        else:
+            ans = json.dumps({"answer": "x"})
+        write_receipt(receipt_path, {"provider": self.name, "model": self.model, "response_json": {"answer": ans}})
+        return ProviderResponse(ans, {}, self.name, self.model, 0.0, 0.0)
+
+
+def test_min_granularity_warn_accepts_single_segment(tmp_path: Path):
+    from dataclasses import replace
+    rubric = load_rubric()
+    ep = synthetic_episode(0)
+    cfg = replace(load_strategy("S2"), min_granularity_policy="warn", self_consistency_k=1,
+                  refine_boundaries=False, max_label_attempts=3)
+    with pytest.warns(UserWarning, match="single_segment_candidate"):
+        res = segment_episode(ep, _SingleSegProvider(), rubric, cfg, tmp_path)
+    assert res.granularity_warning is True            # flagged single_segment_candidate
+    assert len(res.segments) == 1                     # the single segment is accepted, not forced up
+    assert res.segments[0].evidence                   # grounded fields retained
+    assert len(res.calls) == 2                         # observe + 1 label (accepts on attempt 0, no re-prompt)
+
+
+def test_min_granularity_reject_reprompts(tmp_path: Path):
+    from dataclasses import replace
+    rubric = load_rubric()
+    ep = synthetic_episode(0)
+    cfg = replace(load_strategy("S2"), min_granularity_policy="reject", self_consistency_k=1,
+                  refine_boundaries=False, max_label_attempts=3)
+    res = segment_episode(ep, _SingleSegProvider(), rubric, cfg, tmp_path)
+    # reject re-prompts up to max_label_attempts=3 before the lenient fallback.
+    assert len(res.calls) == 1 + 3                     # observe + 3 label attempts
+
+
+def test_presets_default_to_warn_policy():
+    for k in ("S2", "S3", "S4"):
+        assert load_strategy(k).min_granularity_policy == "warn"
+
+
 def test_s4_draws_multiple_label_samples(tmp_path: Path):
     rubric = load_rubric()
     provider = build_provider("mock")

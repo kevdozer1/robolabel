@@ -20,6 +20,9 @@ class SubtaskResult:
     observations: Any
     calls: list[ProviderResponse]
     keyframes: list[int]
+    # True when a grounded strategy produced fewer than the minimum segments and the
+    # min-granularity policy is "warn" (a single_segment_candidate, e.g. ep7).
+    granularity_warning: bool = False
 
 
 def label_subtasks(

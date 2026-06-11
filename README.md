@@ -121,6 +121,28 @@ degenerate/uniform label; stick with S0 (cheapest, reproducible) when the averag
 you need. The full trade-off — quality false-negatives, a subgoal-agreement regression,
 cost — is in the report.
 
+### Recommended defaults
+
+Measured on SO-101 (your data may differ — measure it):
+
+- **Default: `--strategy S2 --provider gemini` (Flash).** The cheapest grounded cell
+  (~$0.018/episode), IoU-parity with the S0 baseline, **zero failure-band episodes**, and
+  the best boundary placement at that price (it hit the most gold transitions within ±5
+  frames). With the `warn` granularity policy it no longer force-over-segments genuinely
+  single-segment episodes.
+- **Use Pro (`--model gemini-2.5-pro`) when quality gating matters.** The stronger model
+  cut catastrophic quality false-negatives (a human-5 scored ≤2) from **3→1** on tune —
+  the silent-filtering hazard — at ~4× the cost. If you filter episodes by auto quality,
+  that reduction is worth it.
+- **`S_grip` (free, proprioceptive) and uniform-fifths are floors, not labels.** They cost
+  $0 and are useful as sanity references (the VLM should beat them — it does, by ~0.10–0.25
+  IoU), but they are well below usable boundary quality here. Don't ship them as
+  annotations.
+
+Footnote on numbers: the S0-Flash baseline is **0.457** boundary IoU over the full
+50-episode calibration set; **0.400 / 0.460** are the same baseline on the 30-episode tune
+/ 20-episode test subsets. The strategy comparisons use the subset numbers.
+
 ---
 
 ## What the gate does and does not do

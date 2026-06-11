@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import math
 import statistics
+import warnings
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,18 @@ from .subtasks import SubtaskResult, label_subtasks
 
 class SchemaValidationError(ValueError):
     """A grounded segmentation answer violated the strategy's output schema."""
+
+
+class GranularityError(SchemaValidationError):
+    """The answer was valid but below the minimum-granularity floor.
+
+    Carries the finalized (below-min) ``segments`` so a ``warn`` policy can accept
+    them; a ``reject`` policy treats it like any other schema failure.
+    """
+
+    def __init__(self, message: str, segments: list[SubtaskSegment]):
+        super().__init__(message)
+        self.segments = segments
 
 
 def segment_episode(
@@ -74,15 +87,17 @@ def segment_episode(
     # Stage two: k grounded label samples.
     k = max(1, config.self_consistency_k)
     samples: list[list[SubtaskSegment]] = []
+    granularity_warning = False
     for s in range(k):
         temperature = config.temperature if k > 1 else None
-        segs, sample_calls = _grounded_label(
+        segs, sample_calls, gflag = _grounded_label(
             provider, frames, indices, rubric, config, receipt_dir,
             task=task, last_frame=last_frame, observations=obs_text, manifest=manifest,
             captions=captions, sample_idx=s, temperature=temperature, num_samples=k,
         )
         calls.extend(sample_calls)
         samples.append(segs)
+        granularity_warning = granularity_warning or gflag
 
     segments = _median_combine(samples, last_frame) if k > 1 else samples[0]
 
@@ -95,7 +110,12 @@ def segment_episode(
 
     for i, seg in enumerate(segments):
         seg.segment_idx = i
-    return SubtaskResult(segments, observations, calls, indices)
+    # Flag if the final segmentation is below the granularity floor (a
+    # single_segment_candidate), whether from a sample or the combined result.
+    if config.enforce_min_segments and len(segments) < rubric.strategy_min_segments:
+        granularity_warning = True
+    return SubtaskResult(segments, observations, calls, indices,
+                         granularity_warning=granularity_warning)
 
 
 # --------------------------------------------------------------------------- #
@@ -144,6 +164,7 @@ def _grounded_label(
     )
     calls: list[ProviderResponse] = []
     segments: list[SubtaskSegment] | None = None
+    granularity_warning = False
     for attempt in range(max(1, config.max_label_attempts)):
         question = base_q if attempt == 0 else base_q + "\n\n" + _retry_suffix(rubric)
         receipt = receipt_dir / _label_receipt_name(num_samples, sample_idx, attempt)
@@ -155,6 +176,20 @@ def _grounded_label(
                 try_extract_json(resp.answer), last_frame + 1, config, rubric
             )
             break
+        except GranularityError as ge:
+            # Below the granularity floor. "warn" (default): accept it and flag a
+            # single_segment_candidate — some episodes really are one segment (ep7).
+            # "reject": treat like any failure and re-prompt.
+            if config.min_granularity_policy == "warn":
+                segments = ge.segments
+                granularity_warning = True
+                warnings.warn(
+                    "grounded segmentation below min granularity "
+                    "(single_segment_candidate); accepted under 'warn' policy",
+                    stacklevel=2,
+                )
+                break
+            segments = None
         except SchemaValidationError:
             segments = None
     if segments is None:
@@ -165,7 +200,7 @@ def _grounded_label(
             try_extract_json(calls[-1].answer), last_frame + 1,
             1, rubric.strategy_max_segments,
         )
-    return segments, calls
+    return segments, calls, granularity_warning
 
 
 def validate_grounded_segments(
@@ -213,12 +248,15 @@ def validate_grounded_segments(
             break
     if not clean:
         raise SchemaValidationError("no valid segments after parsing")
-    if config.enforce_min_segments and len(clean) < rubric.strategy_min_segments:
-        raise SchemaValidationError(
-            f"degenerate segmentation: {len(clean)} < {rubric.strategy_min_segments} required segments"
-        )
     clean[0].start_frame = 0
     clean[-1].end_frame = last
+    if config.enforce_min_segments and len(clean) < rubric.strategy_min_segments:
+        # Finalized but below the floor — caller decides (reject vs warn) by policy.
+        for i, seg in enumerate(clean):
+            seg.segment_idx = i
+        raise GranularityError(
+            f"below min granularity: {len(clean)} < {rubric.strategy_min_segments} segments", clean
+        )
     for i, seg in enumerate(clean):
         seg.segment_idx = i
     return clean

@@ -23,6 +23,7 @@ import argparse
 import json
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 from statistics import mean, median
 
@@ -119,7 +120,9 @@ def reconstruct_vlm(eval_out: Path, model_dir: str, model_name: str, strategy: s
                     episodes: dict, rubric) -> dict[str, list]:
     from robovid_conditioner.providers.base import build_provider
     provider = build_provider("gemini", model_name)
-    cfg = load_strategy(strategy)
+    # The ablation ran under the prior hard-reject granularity policy; pin it so the
+    # reconstruction stays faithful to the reported run (the current default is "warn").
+    cfg = replace(load_strategy(strategy), min_granularity_policy="reject")
     segs: dict[str, list] = {}
     for eid, ep in episodes.items():
         rdir = eval_out / model_dir / strategy / "raw_receipts" / eid

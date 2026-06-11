@@ -125,20 +125,36 @@ def _log(run_log: dict, out: Path, msg: str) -> None:
     print(msg, file=sys.stderr)
 
 
-def _per_call_from_receipts(out: Path, before: float) -> float:
-    """Average $/call observed during the probe (delta spend / receipts written)."""
-    n = 0
-    for f in out.rglob("*.json"):
-        if f.name in {"segments.json", "strategy.json"} or f.name.startswith("results_"):
+def _probe_per_call(out: Path, model_dir: str, probe_id: str) -> float:
+    """Average $/call over the probe episode's own (cache-bypassed) receipts."""
+    from robovid_conditioner.providers.gemini import _estimate_cost
+    costs: list[float] = []
+    for d in (out / model_dir / "metadata" / probe_id, out / model_dir / "S1" / "raw_receipts" / probe_id):
+        if not d.exists():
             continue
-        try:
-            d = json.loads(f.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if isinstance(d.get("response_json"), dict) and d.get("model"):
-            n += 1
-    spent = ev.spend_from_receipts(out)
-    return (spent - before) / n if n else 0.0
+        for f in d.glob("*.json"):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            rj, model = data.get("response_json"), data.get("model")
+            if isinstance(rj, dict) and model:
+                c = _estimate_cost(rj, model)
+                if c:
+                    costs.append(c)
+    return sum(costs) / len(costs) if costs else 0.0
+
+
+def _price_table_estimate(model: str) -> float:
+    """Conservative per-call $ from the gemini price table (a typical grounded call)."""
+    from robovid_conditioner.providers.gemini import _PRICES
+    low = model.lower()
+    key = "2.5-pro" if "2.5-pro" in low else "2.5-flash" if "2.5-flash" in low else "flash-lite"
+    prices = _PRICES.get(key)
+    if not prices:
+        return 0.01
+    # ~1.5k input tokens (12-frame contact sheet + prompt) + ~0.3k output per call.
+    return 1500 / 1e6 * prices["input"] + 300 / 1e6 * prices["output"]
 
 
 def run(args: argparse.Namespace) -> int:
@@ -164,16 +180,25 @@ def run(args: argparse.Namespace) -> int:
         _log(run_log, out, f"PREFLIGHT ABORT: {exc}")
         return 3
     flash_id = f"{flash.name}/{flash.model}"
-    before = ev.spend_from_receipts(out)
 
     tune_eps = ev._load_episodes(args.dataset, args.camera_key, tune_ids)
     probe_id = next(iter(tune_eps))
     # One real S1 episode (also satisfies the "verify a parsed schema-valid response,
     # captions out, frame-indexed boundaries + evidence back" preflight check).
+    # IMPORTANT: bypass the receipt cache for the probe so per-call cost is *measured*,
+    # not read as $0 off a cached receipt (the bug from the first run, where the probe
+    # hit the smoke's cache and the budget gate went inert).
+    prev_cache = getattr(flash, "use_cache", None)
+    if prev_cache is not None:
+        flash.use_cache = False
     q1, mc1 = ev.label_metadata_for(flash, flash_id, rubric, {probe_id: tune_eps[probe_id]}, out)
     probe_row = ev.run_cell(flash, flash_id, rubric, gold, {probe_id: tune_eps[probe_id]},
                             q1, mc1, "S1", out, "tune", min_reportable=1)
-    per_call = _per_call_from_receipts(out, before)
+    if prev_cache is not None:
+        flash.use_cache = prev_cache
+    per_call = _probe_per_call(out, ev._safe(flash_id), probe_id)
+    if per_call <= 0:  # final fallback: a conservative price-table estimate
+        per_call = _price_table_estimate(flash.model)
     projected, proj_rows = project_full_sweep(ALL_STRATEGIES,
                                               [flash_model] + ([pro_model] if pro_model else []),
                                               len(tune_ids), per_call)
