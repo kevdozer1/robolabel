@@ -1,18 +1,21 @@
 # Run summary
 
-The full annotation-strategy system (S0–S4 grounding → vocabulary → refinement →
-self-consistency), the gate failure-band detectors, schema v2, the eval harness,
-and the autonomous budget-capped runner are **built, committed on branch
-`strategy-layer`, and green** (68 tests, ruff clean, offline dry-run of the whole
-Phase 1–4 orchestration passing). **The live ablation did not run and $0 was spent**,
-because no `GEMINI_API_KEY` is reachable — it is not in `labelkit/.env` nor in any
-environment scope (a `$env:` set in your interactive shell does not reach the
-process the run spawns), so there are no win, test number, or measured spend to
-report yet. Everything that costs nothing is verified: the split is intact (30/20,
-seeded), the SO-101 dataset + `observation.images.side` camera resolve and decode
-from the local cache, and the cost projection (~$36.7 for the full sweep) already
-tells us the run will hit the $30 ceiling and degrade gracefully via the priority
-order. **Look first at `STRATEGY_REPORT.md` → "Run status"**, then put the key in
-`labelkit/.env` and launch the one command there (`python scripts/run_ablation.py
-… --budget 30`) — it is fully autonomous, resumable, and stops itself at the
-ceiling, so it is safe to start and walk away.
+The full S0–S4 × {Gemini 2.5 Flash, Pro} strategy ablation (plus the free S_grip
+proprioceptive baseline) ran end to end on `lerobot/svla_so101_pickplace` — 10 tune
+cells × 30 episodes, mechanical selection, and one held-out 20-episode test cell — for
+**$16.54 of the $30 ceiling**, with the four positioning/interop workstreams
+(LeRobot export, S_grip, README, launch collateral) all built, tested (77 pass, ruff
+clean), and committed on branch `strategy-layer`. The mechanically-selected winner was
+**Gemini 2.5 Pro, strategy S2** (tune boundary IoU 0.453, clearing the +0.05 bar by
+0.003) — but **on the held-out test it scored 0.444 while the S0-Flash baseline scored
+0.460**, so the strategy layer did **not** improve mean boundary IoU on unseen data.
+What it *did* do, confirmed on test, is eliminate the catastrophic failure bands
+(S0-Flash: 5/20 episodes degenerate-or-uniform; the grounded winner: 0/20) and, via the
+stronger model, cut catastrophic quality false-negatives (3→1 on tune) — so grounding
+buys **robustness and data hygiene, not a higher average**, on this easy near-saturated
+dataset. **Read [STRATEGY_REPORT.md](STRATEGY_REPORT.md) first** — its verdict and the
+three failure-band exhibits (esp. episode 7, where the human label is a *single* segment
+that S2's min-granularity floor forbids) are the whole story; one bug was found and
+fixed mid-run (eval loader mis-indexed non-contiguous episode subsets) and one wrinkle
+documented (preflight projection read $0 off a cached probe, so the budget gate was inert
+— true spend stayed under ceiling regardless).

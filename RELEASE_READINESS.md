@@ -50,21 +50,42 @@ smoke-tested, what is missing, and what to fix first.
   bumped to v2 (adds `phase`, `boundary_evidence`, `strategy`; v1 still reads).
   Schema validation, detectors, strategy configs, and S0–S4 segmentation are
   tested offline with the mock provider; the grounded prompts live in
-  `rubric.yaml`. **The live SO-101 ablation (the actual numbers) is pending — see
-  "Smoke-tested / unverified only".**
+  `rubric.yaml`. **Exercised live at ablation scale** — see below.
+- **Live provider path, exercised at scale.** The full S0–S4 × {Gemini 2.5 Flash,
+  Pro} ablation ran end to end on the real `lerobot/svla_so101_pickplace` (10 cells ×
+  30 tune episodes + a held-out 20-episode test cell + S0-Flash before/after ≈ 1.3k
+  live Gemini calls, **$16.54 / $30** budget, tracked from receipts). Preflight,
+  per-episode retry/backoff, per-cell checkpointing, mechanical selection, and the
+  single-test-cell rule all worked; results in `STRATEGY_REPORT.md`. The honest
+  finding: grounding eliminates the failure bands but did not raise mean held-out IoU.
+- **LeRobot subtask export.** `export --format lerobot` writes `meta/subtasks.parquet`
+  (+ a per-episode boundary table) in the pinned-lerobot convention; round-trip test
+  reloads through lerobot's own `load_subtasks`. See `SCHEMA.md`.
+- **S_grip free baseline.** Proprioceptive (gripper + EE-speed) segmenter, zero-API,
+  scored on tune (IoU 0.204) and test (0.184) — reported as the floor the VLM beats.
 - **Strategy eval harness.** `scripts/eval_strategies.py` scores every
   (strategy, model) cell with the existing `reliability_report` against the frozen
-  `eval/so101_split.json` (30 tune / 20 test, seeded). Its scoring plumbing has an
-  offline `--self-test`; the pure scoring functions are unit-tested.
-- **Quality bar.** `ruff` clean; 56 tests pass on Python 3.10; CI matrix 3.10/3.12.
+  `eval/so101_split.json` (30 tune / 20 test, seeded). `scripts/run_ablation.py`
+  orchestrates the budget-capped run; pure decision functions unit-tested.
+- **Quality bar.** `ruff` clean; 77 tests pass on Python 3.10; CI matrix 3.10/3.12.
+
+## Fixed / found during the live run
+
+- **Eval loader mis-indexed non-contiguous episode subsets** (fixed, committed). The
+  LeRobot adapter indexes frames by an episode's *global* `dataset_from_index`, which
+  only matches when the dataset is loaded whole or as a 0-based contiguous prefix; the
+  held-out test split `[2, 6, …]` ran the index off the end. The eval loader now loads
+  the full (cached) dataset and filters; the adapter was left untouched (scope guard).
+  A real user passing a non-contiguous `--episodes` subset to the adapter would hit the
+  same bug — file an adapter fix before 1.0.
+- **Preflight cost projection read $0** (documented, not yet fixed). The preflight probe
+  hit a cached receipt from the smoke, so per-call cost estimated to 0 and the budget
+  *gate* never bound. True spend (from receipts) was correct throughout and stayed under
+  the ceiling; but the a-priori projection should derive per-call cost from a fresh probe
+  or the price table. See `STRATEGY_REPORT.md` → Cost accounting.
 
 ## Smoke-tested / unverified only
 
-- **Strategy ablation numbers (STRATEGY_REPORT.md).** The S0–S4 strategy *system*
-  is built and tested offline; the live SO-101 ablation that fills the
-  strategy × model tables (Gemini Flash + a stronger model, on the frozen
-  tune/test split) has not been run yet. The methodology and protocol are written;
-  the result tables are marked pending. Run `scripts/eval_strategies.py` to fill them.
 - **Live OpenAI calls.** The Responses-API request/response handling is written
   against the documented shape but has not been run against the live API (only
   Gemini was dogfooded). Verify before claiming OpenAI support.
@@ -75,14 +96,15 @@ smoke-tested, what is missing, and what to fix first.
 
 ## Known gaps
 
-- **Name.** The project is named `robovid_conditioner`, which is **available on
-  PyPI** (checked) and free as a GitHub repo name. Reserve the PyPI name before
-  first publish so it cannot be sniped. (The earlier placeholder `labelkit` was
-  taken on PyPI; that is why this name was chosen.)
-- **LeRobot write-back.** Writing annotations back into the dataset's own metadata
-  is documented as planned but not implemented; only the parquet sidecar and JSONL
-  export exist today. The pinned LeRobot version (0.4.x) and its metadata layout
-  should be confirmed to support per-episode annotation fields before building it.
+- **Name.** The public brand/command is now **`robolabel`** (console-script + README);
+  the import package and `[project] name` are still `robovid_conditioner`. Finish the
+  package/PyPI rename before first publish (steps in `docs/launch_checklist.md`), and
+  reserve `robolabel` on PyPI + GitHub.
+- **LeRobot write-back.** `export --format lerobot` now writes our subtask boundaries
+  into the pinned-lerobot subtask convention (`meta/subtasks.parquet` + a per-episode
+  boundary table), round-trip-tested through lerobot's `load_subtasks`. Still *export*,
+  not in-place mutation of the dataset's own `data/` parquet; `subtask_index` is
+  materialized as a metadata overlay rather than written per-frame. See `SCHEMA.md`.
 - **LeRobot version pinning.** Verified against 0.4.4 only. The adapter reads
   `meta.episodes[ep]["dataset_from_index"/"dataset_to_index"]`; a future LeRobot
   metadata change would require an adapter update. Pin and test a version matrix

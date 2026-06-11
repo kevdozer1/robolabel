@@ -109,6 +109,18 @@ here is — against the human gold set with the reliability report. The SO-101 a
 (S0–S4 × Gemini Flash/Pro, plus `S_grip`, tuned on 30 episodes and scored once on 20
 held-out) is written up in [`STRATEGY_REPORT.md`](STRATEGY_REPORT.md).
 
+**The measured result, honestly:** on this easy dataset the strategy layer did **not**
+improve *mean* held-out boundary IoU — the chosen cell (Gemini 2.5 Pro, S2) scored
+**0.444** on the 20 held-out episodes vs **0.460** for the S0-Flash baseline. What it
+*did* do, on held-out data, is eliminate the catastrophic failure bands: S0-Flash left
+**5 of 20** test episodes degenerate or uniform-split; the grounded strategy left
+**0 of 20**. So grounding here buys **robustness and data hygiene** (no silent garbage
+episodes), not a higher average — and the held-out test is what stopped us from
+claiming the tune-set win. Use a grounded strategy when you care about never emitting a
+degenerate/uniform label; stick with S0 (cheapest, reproducible) when the average is all
+you need. The full trade-off — quality false-negatives, a subgoal-agreement regression,
+cost — is in the report.
+
 ---
 
 ## What the gate does and does not do

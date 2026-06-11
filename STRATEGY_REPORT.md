@@ -5,169 +5,261 @@ episodes at a subtask-boundary temporal IoU of **0.457** against a 50-episode hu
 gold set. Can a better *annotation strategy* — not a different model — close that
 gap, and which part of the strategy carries the weight?
 
-This report is the measured answer. It is produced by `scripts/run_ablation.py`
-(orchestration) on top of `scripts/eval_strategies.py` (scoring), which scores
-every (strategy, model) cell with the **same** `reliability_report` used
-everywhere else in the tool, against the **same** human gold file.
+**Short answer (honest).** The strategy layer's tune-set advantage **did not
+generalize** to the held-out test set on *mean* boundary IoU: the mechanically-chosen
+winner (Gemini 2.5 Pro, S2) scored **0.444** on test, while the S0-Flash baseline
+scored **0.460** on the same 20 episodes. What the strategy layer *did* deliver,
+robustly and on held-out data, is the elimination of the **catastrophic failure
+bands**: S0-Flash put **5 of 20** test episodes into a degenerate or uniform-split
+failure mode; the grounded strategy put **0 of 20** there. The stronger model also cut
+catastrophic quality false-negatives. So grounding buys **robustness and data
+hygiene**, not higher mean IoU, on this (easy, near-saturated) dataset — and the
+held-out test is exactly what kept us from claiming otherwise.
 
----
-
-## ⏸ Run status: built and verified, awaiting the API credential
-
-**The live ablation has not run yet** — not for any code reason, but because no
-`GEMINI_API_KEY` is reachable on the machine: it is absent from `labelkit/.env`
-and from the Process/User/Machine environment scopes. (A `$env:` set in an
-interactive shell is process-scoped and does not reach the fresh process the run
-spawns; that is the most likely cause.) Everything that does **not** cost money is
-verified:
-
-- **Preflight, zero-cost:** git repo on a feature branch; `.env` git-ignored and
-  untracked; secret scan clean; `eval/so101_split.json` integrity confirmed (30
-  tune / 20 test, no overlap, seed 20260607, all ids present in the gold file); the
-  LeRobot adapter resolves `lerobot/svla_so101_pickplace` with camera
-  `observation.images.side` and decodes real frames (ep 0: 303 frames, 30 fps,
-  480×640) **from the local cache** — no re-download needed.
-- **Orchestration logic, offline:** `run_ablation.py --dry-run` exercises the full
-  Phase 1–4 flow on synthetic episodes (mock provider). The priority order, the
-  mechanical selection (within-0.02 cheaper, quality tie-break, +0.05-over-S0
-  bar), the budget gate, and the reportability threshold are unit-tested
-  (`tests/test_run_ablation.py`).
-- **Cost projection (the budget call):** at a placeholder $0.012/call the full
-  5×2×30 tune sweep projects to **~$36.7**, which **exceeds the $30 ceiling**. So on
-  the real run the budget gate is *expected* to engage: all Flash cells complete
-  (cheap), then Pro is added in priority order (S0 anchor → Flash winner → rest)
-  until the next cell would cross $30, at which point remaining Pro cells are
-  skipped and noted. The held-out test cell is reserved within that budget. The
-  real per-call cost is measured in preflight from a single live S1 episode and the
-  projection is rewritten before the sweep starts.
-
-**To run it (one command, fully autonomous under the guardrails):**
-
-```bash
-# 1) put the key where the loader looks (it is git-ignored):
-printf 'GEMINI_API_KEY=YOUR_KEY\n' >> labelkit/.env
-# 2) launch — preflight → budget-gated tune sweep → mechanical selection → one test cell:
-python scripts/run_ablation.py \
-  --gold ../robovid_work/so101_gemini/gold.json --split eval/so101_split.json \
-  --dataset lerobot/svla_so101_pickplace --camera-key observation.images.side \
-  --budget 30 --out eval_out
-```
-
-It checkpoints per episode and resumes for free (receipt cache), so a credit
-run-out mid-sweep loses nothing: every completed cell is already scored in
-`eval_out/results_tune.json`, and this report can be filled from whatever exists.
-The tables below stay marked _pending_ until that run produces numbers.
+Produced by `scripts/run_ablation.py` + `scripts/eval_strategies.py`; every cell is
+scored with the **same** `reliability_report` used everywhere else in the tool,
+against the **same** human gold file. Total spend: **$16.54 / $30 ceiling**.
 
 ---
 
 ## The three failure bands
 
-The baseline boundaries fail in three distinguishable ways. The eval counts how
-many tune episodes fall in each band per strategy, using the gate detectors:
+The baseline boundaries fail in three distinguishable ways, counted per cell by the
+gate detectors:
 
-- **(a) degenerate** — a single "complete the task" segment spanning the episode
-  (`is_degenerate_single_segment`).
-- **(b) uniform split** — the right number of phases, but boundaries at uniform
-  fractions of the duration; the model never grounded them to frames
-  (`is_uniform_split`, coefficient-of-variation of segment lengths below 0.12).
-- **(c) drifted** — plausible, frame-grounded boundaries that are nonetheless
-  systematically off. This is the residual band (not degenerate, not uniform); it
-  is what the refinement and self-consistency passes target, and it shows up as a
-  middling IoU rather than as a detector flag.
+- **(a) degenerate** — a single "complete the task" segment (`is_degenerate_single_segment`).
+- **(b) uniform split** — the right number of phases, but at uniform fractions of the
+  duration; never grounded to frames (`is_uniform_split`, CV of segment lengths < 0.12).
+- **(c) drifted** — plausible, frame-grounded boundaries that are still systematically
+  off. The residual band (a middling IoU rather than a detector flag).
 
 ---
 
 ## Strategies under test (cumulative)
 
-| strategy | adds | what it should fix |
+| strategy | adds | targets |
 |---|---|---|
-| **S0** | baseline (current default): 6 evenly-spaced keyframes, free-text segments | — |
-| **S1** | frame-indexed grounding: 12 captioned frames (index + timestamp), boundaries returned as frame indices each with a one-line evidence string, schema-validated | band (b): boundaries become frame-grounded, not fractional |
-| **S2** | S1 + closed phase vocabulary (approach / grasp / transport / release-place / retract / other) + minimum granularity (single-segment outputs rejected at the schema level, re-prompted) | band (a): degenerate outputs |
-| **S3** | S2 + dense-window refinement: for each boundary, send ±15 frames at full stride and ask for the exact transition frame | band (c): drift |
-| **S4** | S3 + self-consistency: k=3 label samples, per-boundary median | band (c): residual variance |
+| **S0** | baseline: 6 evenly-spaced keyframes, free-text segments | — |
+| **S1** | frame-indexed grounding: 12 captioned frames (index+timestamp), boundaries as frame indices each with an evidence string, schema-validated | band (b) |
+| **S2** | S1 + closed phase vocabulary + min granularity (single-segment rejected, re-prompted) | band (a) |
+| **S3** | S2 + dense-window (±15 frame) boundary refinement | band (c) |
+| **S4** | S3 + self-consistency (k=3 label samples, per-boundary median) | band (c) |
+| **S_grip** | **free, zero-API** proprioceptive baseline: boundaries from gripper open/close + end-effector-speed pauses, phases by event order | (reference floor) |
 
-The full resolved config for each strategy is in
-`src/robovid_conditioner/strategy.py` (and written to `strategy.json` on every
-run). The prompts live in `rubric.yaml` under `strategies:` — config, not code.
+Resolved configs in `src/robovid_conditioner/strategy.py`; grounded prompts in
+`rubric.yaml`. (Note: the grounded re-prompt cap is ≤2 re-prompts per label pass,
+within the operating guardrail.)
 
 ---
 
 ## Evaluation protocol (hygiene)
 
-- **Frozen split.** `eval/so101_split.json` is seeded (seed 20260607) and committed:
-  **30 tune / 20 test**, no overlap. Regenerate identically with
-  `scripts/make_split.py`.
-- **Tune only.** All strategy iteration and threshold-setting happens on the 30
-  tune episodes. The 20 test episodes are scored **once**, with the single chosen
-  strategy, and reported in the held-out table below — not iterated against.
-- **Metadata is labeled once per (model, episode)** and reused across strategies:
-  the strategies only move subtask boundaries, so quality agreement varies by
-  *model*, not by strategy. This keeps the quality columns honest and avoids paying
-  5× for an identical metadata call.
-- **Same metrics, same code.** Boundary temporal IoU, quality exact / within-one
-  agreement, and subgoal frame agreement all come from `reliability_report`. Cost
-  per episode = strategy segmentation calls + the shared metadata call, from the
-  per-call usage receipts.
-
-Reproduce:
-
-```bash
-python scripts/eval_strategies.py \
-  --gold <gold.json> --split eval/so101_split.json \
-  --dataset lerobot/svla_so101_pickplace --camera-key observation.images.side \
-  --phase tune  --strategies S0 S1 S2 S3 S4 \
-  --models gemini/gemini-2.5-flash gemini/gemini-2.5-pro --out eval_out
-# then, once, with the chosen strategy:
-python scripts/eval_strategies.py ... --phase test --strategies <CHOSEN>
-```
+- **Frozen split** `eval/so101_split.json` (seed 20260607): **30 tune / 20 test**, no
+  overlap. Regenerate with `scripts/make_split.py`.
+- **Tune only** for all iteration/selection. The 20 test episodes were scored **once**,
+  with the single chosen cell (+ an S0-Flash before/after), reported below, not iterated.
+- **Metadata labeled once per model** and reused across strategies (strategies only move
+  boundaries) — so quality numbers vary by *model*, not strategy.
+- Same metrics, same `reliability_report`; cost from per-call usage receipts.
 
 ---
 
 ## Results — tune (30 episodes)
 
-<!-- Paste the table block from eval_out/strategy_tables.md (tune) here after the run. -->
-_Pending the live ablation run. The harness writes this table to
-`eval_out/strategy_tables.md` and the raw rows to `eval_out/results_tune.json`._
+| model | strat | boundary IoU | quality exact | subgoal | $/ep | degen | uniform |
+|---|---|---|---|---|---|---|---|
+| Flash | S0 | 0.400 | 0.70 | 0.422 | $0.0185 | **3** | **9** |
+| Flash | S1 | 0.391 | 0.70 | 0.095 | $0.0180 | 0 | 0 |
+| Flash | S2 | 0.415 | 0.70 | 0.095 | $0.0180 | 0 | 0 |
+| Flash | S3 | 0.426 | 0.72 | 0.090 | $0.0262 | 0 | 0 |
+| Flash | S4 | 0.430 | 0.71 | 0.102 | $0.0403 | 0 | 1 |
+| Pro | S0 | 0.355 | 0.87 | 0.069 | $0.0737 | 0 | 0 |
+| Pro | S1 | 0.438 | 0.87 | 0.112 | $0.0728 | 0 | 0 |
+| **Pro** | **S2** | **0.453** | **0.87** | 0.112 | $0.0684 | 0 | 0 |
+| Pro | S3 | 0.430 | 0.87 | 0.112 | $0.1113 | 0 | 0 |
+| Pro | S4 | 0.435 | 0.87 | 0.129 | $0.1694 | 0 | 0 |
+| S_grip | — | 0.204 | n/a | 0.060 | **$0.00** | 0 | 0 |
 
-| model | strategy | boundary IoU | quality exact | quality ±1 | subgoal | $/episode | degenerate | uniform |
-|---|---|---|---|---|---|---|---|---|
-| gemini/gemini-2.5-flash | S0 | _tbd_ | _tbd_ | _tbd_ | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
-| … | S1–S4 | | | | | | | |
-| gemini/gemini-2.5-pro | S0–S4 | | | | | | | |
+Reportable cells (≥25/30 scored): all VLM cells (S3/S4-Flash dropped 1–2 episodes to
+the capped re-prompt loop; those count toward no band, they are simply un-scored).
 
-### Per-failure-band counts (tune)
+### Per-failure-band movement (tune), the mechanism story
 
-_Filled from the `degenerate` / `uniform` columns above plus the residual
-(drifted/ok) count in `results_tune.json`._
+| | S0-Flash | S1-Flash | S2-Flash | grounded (S1+, both models) |
+|---|---|---|---|---|
+| degenerate | 3 | 0 | 0 | 0 |
+| uniform-split | 9 | 0 | 0 | 0 (one S4-Flash relapse) |
+
+**Frame grounding (S1) empties the uniform-split band (9 → 0)** and **the min-granularity
+floor (S2) keeps the degenerate band at 0** — the two detectors confirm each strategy
+does what it was designed to do. The catch: emptying those bands **did not raise mean
+IoU** (S1-Flash 0.391 ≤ S0-Flash 0.400). Grounding replaces a few catastrophic outputs
+and a few good ones with uniformly frame-grounded-but-drifted ones; the mean barely
+moves. The stronger model is where boundary IoU actually rises (Pro S1–S4 ≈ 0.43–0.45 vs
+Flash 0.39–0.43), but even Pro tops out at **0.453**.
 
 ---
 
-## Results — held-out test (20 episodes), chosen strategy, reported once
+## Selection (mechanical, no discretion)
 
-<!-- Paste the test table after the single held-out run. -->
-_Pending. Chosen strategy + model decided on tune, then scored once here._
+Rule: highest tune boundary IoU; ties within 0.02 → cheaper; quality-exact breaks
+remaining ties; winner must beat S0-Flash (0.400) by ≥0.05.
 
-| model | strategy | boundary IoU | quality exact | quality ±1 | subgoal | $/episode |
+> leader = **Pro S2 (0.453)**; within-0.02 cluster = {Pro S4 0.435, Pro S1 0.438, Pro S2
+> 0.453}; cheapest in cluster = **Pro S2** ($0.0684/ep); 0.453 − 0.400 = 0.053 ≥ 0.05 →
+> **WINNER: Pro S2**.
+
+It cleared the bar by 0.003. That margin is the first hint that the result is fragile —
+borne out next.
+
+---
+
+## Results — held-out test (20 episodes), reported once
+
+| model | strat | boundary IoU | quality exact | subgoal | degen | uniform |
 |---|---|---|---|---|---|---|
-| _chosen_ | _chosen_ | _tbd_ | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
+| **Pro** | **S2** (chosen) | **0.444** | 0.95 | 0.122 | **0** | **0** |
+| Flash | S0 (baseline) | **0.460** | 0.90 | 0.622 | **2** | **3** |
+
+Reported once, unmodified, no reruns.
+
+**The chosen strategy lost to the baseline on mean boundary IoU on held-out data**
+(0.444 < 0.460). The tune-set +0.05 edge was overfit to the 30 tune episodes and did
+not transfer — precisely the failure the held-out split exists to catch.
+
+**But the mean hides the distribution.** S0-Flash reaches 0.460 *while putting 5 of 20
+test episodes (25%) into a failure band* — 2 degenerate single-segment, 3 uniform-fifths.
+Pro-S2 reaches 0.444 with **0 of 20** in any failure band. If your downstream use silently
+trusts auto-labels, S0's "higher mean" includes 25% catastrophic episodes; the grounded
+strategy trades ~0.016 mean IoU for never emitting one. Which you prefer depends on
+whether a bad label is worse than a mediocre one — for training-data curation, it usually is.
 
 ---
 
-## Reading guide (what to conclude)
+## Quality: the metric is near-degenerate here
 
-Once the tables are filled, the honest read is:
+The human gold quality distribution is **49/50 score-5** (tune: 29×5 + 1×4; test: 20×5).
+So a model that **always answers "5"** scores **0.97 exact on tune and 1.00 on test** —
+**above both Gemini Flash and Pro.** Read the exact-agreement column with that in mind:
 
-- **Does grounding (S1) move IoU off the 0.457 baseline, and does it empty the
-  uniform-split band?** If yes, band (b) was the dominant baseline failure.
-- **Does S2 empty the degenerate band** without hurting IoU? That isolates band (a).
-- **Do S3/S4 add IoU beyond S2**, and is the added cost per episode worth it? If the
-  refinement/self-consistency gain is within noise, the honest recommendation is to
-  stop at S2 and bank the cost.
-- **Flash vs Pro:** if the stronger model mostly helps quality agreement (a metadata
-  effect) but not boundary IoU, then boundary quality is a *prompting/strategy*
-  problem, not a *model-capability* problem — which is the thesis of this layer.
+| | constant-5 baseline | Flash | Pro |
+|---|---|---|---|
+| quality exact (tune) | **0.967** | 0.700 | 0.867 |
+| quality exact (test) | **1.000** | 0.900 | 0.950 |
 
-The point of the tool is unchanged: whatever the numbers say, they are measured on
-your gold set, in the same units, and the loser strategies are reported next to the
-winner rather than hidden.
+The metric that actually matters on data without quality variance is the **catastrophic
+false-negative rate** — episodes the model scores **≤2 while the human scored ≥4** (the
+silent-filtering hazard):
+
+| | Flash | Pro |
+|---|---|---|
+| catastrophic FN (tune) | **3 / 30 (0.10)** | **1 / 30 (0.033)** |
+| catastrophic FN (test) | 0 / 20 | 0 / 20 |
+
+**This is the real quality story:** the stronger model's value is **fewer catastrophic
+false-negatives** (3 → 1 on tune), not higher exact agreement (which the trivial baseline
+wins). On test neither model produced a catastrophic miss. Quality-score *discrimination*
+cannot be meaningfully evaluated on this dataset — see Limitations.
+
+---
+
+## Subgoal agreement regressed — and why that is partly an artifact
+
+Grounded strategies' subgoal frame agreement craters (S0-Flash 0.42 tune / **0.62 test**
+→ grounded ≈ 0.10–0.12). Two things are true at once:
+
+1. It is a **real cost**: subgoals are subtask end-frames, so moving boundaries moves
+   subgoals away from the human's exact-frame picks, and "exact frame match" is unforgiving.
+2. It is **partly a measurement artifact**: the human gold subgoals were reviewed against
+   the *original* S0 segmentation (many were `accept_auto`), so they are anchored to S0's
+   end-frames. *Any* re-segmentation — including a better one — diverges from them. Do not
+   read the 0.62 → 0.12 drop as "6× worse subgoals"; read it as "subgoal-frame agreement is
+   confounded with the segmentation the gold was built on." A clean test needs subgoals
+   labeled independently of any one segmentation.
+
+---
+
+## Three exhibits (S0-Flash vs the winner vs human gold)
+
+One S0-Flash failure from each band, the same episode under the chosen strategy (Pro-S2),
+and the human boundaries. Numbers are subtask **end-frames**.
+
+**(a) Degenerate — episode 11** (201 frames)
+- S0-Flash: `[200]` — one segment, the whole episode. Useless as conditioning.
+- Pro-S2: `[73, 109, 145, 164, 200]` (approach/grasp/transport/release-place/retract)
+- human: `[70, 87, 130, 200]` — Pro-S2's first boundary (73) lands within 3 frames of the
+  human's (70). **Clean win for grounding.**
+
+**(b) Uniform-split — episode 14** (223 frames)
+- S0-Flash: `[44, 89, 133, 178, 222]` — five near-identical ~44-frame chunks, ungrounded.
+- Pro-S2: `[81, 101, 161, 182, 222]`
+- human: `[83, 93, 136, 153, 222]` — Pro-S2's first boundary (81) matches the human (83);
+  S0's (44) is off by ~40 frames. **Clean win for grounding.**
+
+**(c) Drifted — episode 7** (203 frames) — *the honest counter-example*
+- human: `[202]` — **the human labeled this as a single continuous action.**
+- S0-Flash: `[40, 120, 161, 202]` (4 seg) — over-segmented.
+- Pro-S2: `[55, 92, 129, 147, 202]` (5 seg) — **also over-segmented, and S2's
+  min-granularity floor *forbids* it from ever matching the single-segment ground truth.**
+  Here the anti-degenerate constraint actively hurts: not every episode is a 5-phase
+  pick-and-place, but S2 is required to produce ≥3 phases.
+
+---
+
+## Gate behavior
+
+The gate flagged, never dropped (`Episodes dropped by the gate: 0` on every run). On the
+S0-Flash cells it raised the degenerate / uniform-split flags shown above and
+`quality_outlier_needs_review` on the catastrophic-FN episodes (3 on Flash-tune, 1 on
+Pro-tune) — i.e. the gate surfaced exactly the episodes a human should re-check, and the
+grounded strategies produced none of the band flags.
+
+---
+
+## Cost accounting (vs the $30 ceiling)
+
+Total spend **$16.54 / $30**, tracked continuously from on-disk receipts (the
+authoritative number). Per-cell costs are in the tune table; Pro is ~4× Flash per call.
+
+**One honest wrinkle:** the preflight cost *projection* read **$0** because its probe
+(S1 on tune-ep-0) hit a cached receipt from the earlier 2-episode smoke, so the per-call
+estimate was 0 and the budget *gate* never bound this run. No harm done — actual spend was
+always tracked from receipts and landed at $16.54, well under the ceiling — but had Pro
+been much pricier, the inert gate would not have caught it. Fix for next time: derive the
+per-call estimate from a *fresh* (un-cached) probe, or from the published price table
+directly. (The true-spend accounting was correct throughout; only the a-priori projection
+was fooled.)
+
+---
+
+## Limitations (stated, not hidden)
+
+- **One dataset.** `svla_so101_pickplace` is short, single-camera, tabletop pick-and-place,
+  and **easy**: S0-Flash already clears 0.46 on test and 49/50 episodes are human-rated 5.
+  Conclusions may invert on long-horizon, multi-stage, or genuinely variable-quality data.
+- **One annotator's gold**, 50 episodes; the held-out test is only 20. The +0.05 selection
+  margin was 0.003 — small-sample fragile, as the test result showed.
+- **Quality metric near-degenerate.** With 49/50 at score 5, exact agreement is dominated
+  by the constant-5 baseline; only the catastrophic-FN rate is informative. Re-run on a
+  dataset with real quality spread to evaluate quality *discrimination*.
+- **Subgoal agreement is confounded** with the original S0 segmentation the gold was built
+  against (above).
+- **Tune-set rubric exposure.** The grounded prompts and gate thresholds were authored
+  while looking at SO-101 behavior; some tune-set fit is baked into the prompts themselves,
+  not just the selection. The held-out test mitigates but does not eliminate this.
+- Test boundary IoU **0.444 < 0.65**, so the post-tuning full-dataset re-annotation
+  (gated on ≥0.65) was **not** run — the result does not warrant reshipping the demo
+  artifact as "the tool's real capability."
+
+---
+
+## Verdict
+
+On this dataset, the strategy layer is **not** a free win on mean boundary IoU — the
+held-out test says the S0-Flash baseline is as good or better on the average. Its real,
+held-out-confirmed value is **robustness**: it eliminates the degenerate and uniform-split
+failure bands entirely (25% → 0% of test episodes), and the stronger model cuts
+catastrophic quality false-negatives. Whether that robustness is worth ~4× the cost
+(Pro) and a subgoal-agreement regression is a judgment for your pipeline — and the only
+reason we can state the trade-off honestly is that everything here was measured against a
+human gold set in the same units, winners and losers reported side by side.
