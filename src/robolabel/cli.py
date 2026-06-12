@@ -46,6 +46,30 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--port", type=int, default=8787)
     p.add_argument("--no-browser", action="store_true")
 
+    p = sub.add_parser("inspect", help="Verification viewer: multi-track timeline, evidence check, metrics.")
+    p.add_argument("--data", required=True, help="inspect_data.json (scripts/build_inspect_data.py)")
+    p.add_argument("--source", choices=["lerobot", "directory"], default=None)
+    p.add_argument("--target", default=None)
+    p.add_argument("--camera-key", default=None)
+    p.add_argument("--grades", default=None, help="(blind mode) JSON file to record grades into")
+    p.add_argument("--port", type=int, default=8799)
+    p.add_argument("--no-browser", action="store_true")
+
+    p = sub.add_parser("query", help="Retrieve segments by phase -> contact sheet; or needs_review episodes.")
+    p.add_argument("--annotations", required=True)
+    p.add_argument("--phase", default=None, help="Retrieve every segment with this phase (e.g. grasp).")
+    p.add_argument("--needs-review", action="store_true", help="List gate needs_review episodes, worst first.")
+    p.add_argument("--source", choices=["lerobot", "directory"], default=None)
+    p.add_argument("--target", default=None)
+    p.add_argument("--camera-key", default=None)
+    p.add_argument("--out", default=None, help="Write a contact-sheet PNG here (phase query).")
+    p.add_argument("--limit", type=int, default=24)
+
+    p = sub.add_parser("trial-report", help="Tally a blind-trial grades file into a markdown report.")
+    p.add_argument("--grades", required=True)
+    p.add_argument("--unblind", required=True, help="non-blind inspect_data.json (same eps) for strategy identity")
+    p.add_argument("--out", default="FRESH_TRIAL_REPORT.md")
+
     p = sub.add_parser("reliability", help="VLM-vs-human agreement from a gold file.")
     p.add_argument("--gold", required=True)
     p.add_argument("--json", default=None, help="Also write the full report JSON here.")
@@ -174,9 +198,48 @@ def _demo(args) -> int:
     return 0
 
 
+def _inspect(args) -> int:
+    from .inspect_server import build_session, serve
+
+    session = build_session(args.data, args.source, args.target, args.grades, args.camera_key)
+    serve(session, host="127.0.0.1", port=args.port, open_browser=not getattr(args, "no_browser", False))
+    return 0
+
+
+def _query(args) -> int:
+    from .query import needs_review_episodes, phase_contact_sheet
+
+    if args.needs_review:
+        rows = needs_review_episodes(args.annotations)
+        print(json.dumps(rows, indent=2))
+        return 0
+    if not args.phase:
+        print("Pass --phase <name> or --needs-review.", file=sys.stderr)
+        return 2
+    source = None
+    if args.source and args.target:
+        from .adapters import build_source
+        kwargs = {"camera_key": args.camera_key} if (args.source == "lerobot" and args.camera_key) else {}
+        source = build_source(args.source, args.target, **kwargs)
+    result = phase_contact_sheet(args.annotations, args.phase, source=source, out=args.out, limit=args.limit)
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def _trial_report(args) -> int:
+    from .trial_report import write_trial_report
+
+    out = write_trial_report(args.grades, args.unblind, args.out)
+    print(f"wrote {out}")
+    return 0
+
+
 _DISPATCH = {
     "annotate": _annotate,
     "review": _review,
+    "inspect": _inspect,
+    "query": _query,
+    "trial-report": _trial_report,
     "reliability": _reliability,
     "gate": _gate,
     "export": _export,

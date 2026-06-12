@@ -38,3 +38,8 @@ eval_out_grip/
 
 # supplementary metrics (regenerable via scripts/compute_metrics.py)
 eval_metrics/
+
+# inspect viewer data (regenerable via scripts/build_inspect_data.py; embeds the local gold)
+inspect_data/
+fresh_*/
+grades*.json
