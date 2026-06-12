@@ -83,11 +83,15 @@ When all items are graded:
 
 ```bash
 robolabel trial-report --grades fresh_stacking/grades.json \
-  --unblind fresh_stacking/blind.unblind.json --out FRESH_TRIAL_REPORT.md
+  --unblind fresh_stacking/blind.unblind.json --out fresh_stacking/trial_tally.md
 ```
 
-- [ ] Read `FRESH_TRIAL_REPORT.md`. **This is the generalization claim.** Note the
-  evidence factual-accuracy rate — it is the metric no other tool reports. __________
+- [ ] Open `fresh_stacking/trial_tally.md` and paste its table into the "Blind grading"
+  section of `FRESH_TRIAL_REPORT.md` (which already holds the objective stats). **This is
+  the generalization claim.** Note the evidence factual-accuracy rate — the metric no other
+  tool reports. __________
+- [ ] (S0-Flash contrast was lost to a credit limit during annotation; top up the key and
+  re-run the `s0_flash` annotate command if you want it — it resumes.) __________
 
 ## 5. The two queries (8 min)
 

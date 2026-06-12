@@ -4,6 +4,21 @@
 
 First public release. Highlights:
 
+- **Acceptance-review kit.** `robolabel inspect` — a verification viewer (multi-track
+  boundary timeline, evidence-vs-cited-frame tab, per-episode metric panel, sort/filter,
+  and a blind-grading mode); `robolabel query` — retrieve segments by phase as a contact
+  sheet + list gate `needs_review` episodes; `robolabel trial-report` — tally a blind trial
+  by strategy (incl. the **evidence factual-accuracy** metric). Plus `CLAIMS.md` (claim →
+  evidence → status), `REVIEW_GUIDE.md` (a 90-minute author sign-off session), and
+  `docs/consumability.md` (the annotate→export→reload→resolve chain).
+- **Generalization tested on a second dataset.** `lerobot/svla_so100_stacking` (apache-2.0,
+  never-touched): the grounded strategy produced 0/20 failure-band episodes with grounded
+  evidence referencing the new scene — failure-band elimination now verified on two datasets
+  (`FRESH_TRIAL_REPORT.md`). During this run the Gemini key hit a credit limit (HTTP 429)
+  mid-annotation; the resilient `annotate_source` checkpointing kept all completed episodes
+  — confirming the resilience behaves correctly under a real mid-run failure (no fix needed).
+
+
 - **Annotation-strategy layer (S0–S4)** between adapter and provider: frame-indexed
   grounding, closed phase vocabulary, dense-window boundary refinement, and
   self-consistency. Off by default (S0 reproducible). Measured on SO-101 in
