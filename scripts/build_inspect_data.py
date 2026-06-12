@@ -148,53 +148,75 @@ def from_eval(args):
     print(f"wrote {args.out}: {len(episodes)} episodes, tracks={payload['track_order']}")
 
 
+def _bands_for(segs):
+    st = [{"start_frame": s["start"], "end_frame": s["end"]} for s in segs]
+    if st and is_degenerate_single_segment(st):
+        return ["degenerate"]
+    if st and is_uniform_split(st, 0.12, 3):
+        return ["uniform_split"]
+    return []
+
+
 def from_annotations(args):
     rubric = load_rubric()
     states = _load_states(args.dataset) if args.dataset else {}
     track_specs = [s.split("=", 1) for s in args.track]  # name=annotations_dir
     dfs = {name: read_annotations(d) for name, d in track_specs}
+
+    if args.blind:
+        # One BLIND ITEM per (episode, strategy): strategy identity hidden, shuffled.
+        items = []
+        for name, df in dfs.items():
+            for eid in list_episode_ids(df):
+                rec = episode_records(df, eid)
+                segs = segments_from_records(rec["subtasks"])
+                items.append({"frame_ep": eid, "_real_ep": eid, "_strategy": name,
+                              "num_frames": int(rec["num_frames"]), "fps": 30.0,
+                              "task": rec["task"] or "", "tracks": {"model": {"segments": segs}},
+                              "gate_flags": _bands_for(segs), "_bands": _bands_for(segs), "sort_iou": 1.0})
+        _seeded(args.seed).shuffle(items)
+        unblind = {"__dataset__": args.dataset or ""}
+        for i, it in enumerate(items):
+            iid = f"T{i:03d}"
+            it["episode_id"] = iid
+            it["n_flags"] = len(it["gate_flags"])
+            unblind[iid] = {"episode_id": it.pop("_real_ep"), "strategy": it.pop("_strategy"),
+                            "bands": it.pop("_bands")}
+        payload = assemble(args.dataset or "", "lerobot", ["model"], items, blind=True)
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        ub = out.with_suffix(".unblind.json")
+        ub.write_text(json.dumps(unblind, indent=2), encoding="utf-8")
+        print(f"wrote {out}: {len(items)} blind items ({len(dfs)} strategies × episodes); unblind -> {ub}")
+        return
+
+    # non-blind: every strategy as a parallel track per episode (primary = pseudo-gold for sort).
     primary = dfs[track_specs[0][0]]
-    ids = list_episode_ids(primary)
     track_order = [name for name, _ in track_specs]
     if "S_grip" in args.add_baselines and states:
         track_order.append("S_grip")
     if "uniform-fifths" in args.add_baselines:
         track_order.append("uniform-fifths")
-
     episodes = []
-    for eid in ids:
+    for eid in list_episode_ids(primary):
         rec0 = episode_records(primary, eid)
         nf = int(rec0["num_frames"])
-        task = rec0["task"] or ""
-        tracks = {}
-        for name, df in dfs.items():
-            tracks[name] = {"segments": segments_from_records(episode_records(df, eid)["subtasks"])}
+        tracks = {name: {"segments": segments_from_records(episode_records(df, eid)["subtasks"])}
+                  for name, df in dfs.items()}
         if "S_grip" in track_order and eid in states:
             tracks["S_grip"] = {"segments": _segs(segment_from_state(states[eid], rubric.gripper_baseline, rubric.phase_vocabulary))}
         if "uniform-fifths" in track_order:
             tracks["uniform-fifths"] = {"segments": _uniform5(nf)}
         gname = track_specs[0][0]
-        g_segs = tracks[gname]["segments"]
-        st = [{"start_frame": s["start"], "end_frame": s["end"]} for s in g_segs]
-        flags = []
-        if st and is_degenerate_single_segment(st):
-            flags.append("degenerate")
-        elif st and is_uniform_split(st, 0.12, 3):
-            flags.append("uniform_split")
-        # No gold in the fresh/blind case: build_episode with the primary as pseudo-gold
-        # only matters for sort; blind viewer hides metrics anyway.
-        ep = build_episode(eid, nf, 30.0, task, {**tracks, "gold": tracks[gname]},
-                           gate_flags=flags)
+        ep = build_episode(eid, nf, 30.0, rec0["task"] or "", {**tracks, "gold": tracks[gname]},
+                           gate_flags=_bands_for(tracks[gname]["segments"]))
         ep["tracks"].pop("gold", None)
         episodes.append(ep)
-    # deterministic shuffle for the blind trial
-    if args.blind:
-        rng = _seeded(args.seed)
-        rng.shuffle(episodes)
-    payload = assemble(args.dataset or "", "lerobot", track_order, episodes, blind=args.blind)
+    payload = assemble(args.dataset or "", "lerobot", track_order, episodes)
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out).write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    print(f"wrote {args.out}: {len(episodes)} episodes, tracks={track_order}, blind={args.blind}")
+    print(f"wrote {args.out}: {len(episodes)} episodes, tracks={track_order}")
 
 
 def _seeded(seed):

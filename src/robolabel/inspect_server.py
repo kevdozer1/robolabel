@@ -72,8 +72,9 @@ class InspectSession:
 
     def episode_payload(self, episode_id: str) -> dict[str, Any]:
         e = dict(self._by_id.get(episode_id, {}))
-        if episode_id in self.episodes:
-            self._start_prefetch(episode_id, int(e.get("num_frames", 0)))
+        frame_ep = e.get("frame_ep", episode_id)  # blind items serve frames by the real episode
+        if frame_ep in self.episodes:
+            self._start_prefetch(frame_ep, int(e.get("num_frames", 0)))
         e["existing_grade"] = self._load_grade(episode_id)
         return e
 
@@ -339,7 +340,8 @@ function renderQueue(){const order=queueOrder();const root=document.getElementBy
 async function load(id){stop();cur=id;E=await j('/api/episode/'+encodeURIComponent(id));renderQueue();
  document.getElementById('epid').textContent='Episode '+E.episode_id;document.getElementById('task').textContent=E.task||'';
  const sl=document.getElementById('slider');sl.max=Math.max(0,E.num_frames-1);frame=0;sl.value=0;showFrame();renderTracks();renderPanel();}
-function showFrame(){document.getElementById('frame').src=`/frame/${encodeURIComponent(E.episode_id)}/${frame}`;
+function frameEp(){return E.frame_ep||E.episode_id;}
+function showFrame(){document.getElementById('frame').src=`/frame/${encodeURIComponent(frameEp())}/${frame}`;
  document.getElementById('fcount').textContent=`${frame} / ${E.num_frames-1}`;updatePlayheads();highlight();}
 function onScrub(){frame=Number(document.getElementById('slider').value);showFrame();}
 function seekFrame(fr){frame=Math.max(0,Math.min(E.num_frames-1,fr));document.getElementById('slider').value=frame;showFrame();}
@@ -378,14 +380,14 @@ function boundariesOf(t){return t.segments.slice(0,-1).map(s=>s.end);}
 function renderEvidence(p){const name=gName();const t=E.tracks[name];if(!t){p.innerHTML='<div class="muted">no grounded track</div>';return;}
  p.innerHTML=`<div class="muted">Each evidence string with a thumbnail of its cited frame (segment end). Click the image to jump there and judge whether the claim is true of that frame.</div>`;
  t.segments.forEach((s,i)=>{if(s.evidence==null&&s.phase==null)return;const fr=s.end;const ev=document.createElement('div');ev.className='ev';
-  ev.innerHTML=`<img src="/frame/${encodeURIComponent(E.episode_id)}/${fr}" onclick="seekFrame(${fr})">
+  ev.innerHTML=`<img src="/frame/${encodeURIComponent(frameEp())}/${fr}" onclick="seekFrame(${fr})">
    <div class="evtxt"><div class="evf">seg ${i} · phase <b>${esc(s.phase||'–')}</b> · cited frame ${fr}</div>${esc(s.evidence||'(no evidence string)')}
    ${S.blind?evJudge('ev'+i):''}</div>`;p.appendChild(ev);});}
 function evJudge(key){return `<div class="judge"><button class="btn j-yes" onclick="setG('${key}',true,this)">true</button><button class="btn j-no" onclick="setG('${key}',false,this)">false</button></div>`;}
 let G={};
 function setG(key,val,btn){G[key]=val;const par=btn.parentElement;par.querySelector('.j-yes').classList.toggle('sel',val===true);par.querySelector('.j-no').classList.toggle('sel',val===false);}
 function renderGrade(p){const name=gName();const t=E.tracks[name];G=(E.existing_grade&&E.existing_grade.marks)||{};
- let bh='';t.segments.slice(0,-1).forEach((s,i)=>{bh+=`<div class="ev" style="grid-template-columns:96px 1fr"><img src="/frame/${encodeURIComponent(E.episode_id)}/${s.end}" onclick="seekFrame(${s.end})">
+ let bh='';t.segments.slice(0,-1).forEach((s,i)=>{bh+=`<div class="ev" style="grid-template-columns:96px 1fr"><img src="/frame/${encodeURIComponent(frameEp())}/${s.end}" onclick="seekFrame(${s.end})">
    <div class="evtxt"><div class="evf">boundary ${i} at frame ${s.end} (phase ${esc(s.phase||'–')})</div>
    <div>boundary within ±5 of truth?${judgeBtns('b'+i)}</div><div style="margin-top:5px">phase label correct?${judgeBtns('p'+i)}</div>
    <div style="margin-top:5px">evidence true of frame?${judgeBtns('e'+i)}</div></div></div>`;});

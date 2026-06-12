@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("trial-report", help="Tally a blind-trial grades file into a markdown report.")
     p.add_argument("--grades", required=True)
-    p.add_argument("--unblind", required=True, help="non-blind inspect_data.json (same eps) for strategy identity")
+    p.add_argument("--unblind", required=True, help="the *.unblind.json map (item_id->strategy) from build_inspect_data --blind")
     p.add_argument("--out", default="FRESH_TRIAL_REPORT.md")
 
     p = sub.add_parser("reliability", help="VLM-vs-human agreement from a gold file.")
