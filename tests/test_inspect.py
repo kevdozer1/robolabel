@@ -41,6 +41,17 @@ def test_segments_from_records_maps_fields():
     assert segs[1]["evidence"] == "closes"
 
 
+def test_segments_from_records_coerces_nan():
+    # Regression: empty parquet columns (e.g. baseline S0's phase/evidence) read back as
+    # float NaN, which is truthy — must become None, not the string "nan".
+    nan = float("nan")
+    segs = segments_from_records([{"segment_idx": 0, "start_frame": 0, "end_frame": 9,
+                                   "subtask_text": "reach", "phase": nan, "boundary_evidence": nan}])
+    assert segs[0]["phase"] is None
+    assert segs[0]["evidence"] is None
+    assert segs[0]["text"] == "reach"
+
+
 def test_inspect_http_roundtrip(tmp_path: Path):
     payload = assemble("ds", "lerobot", ["gold", "grounded"],
                        [build_episode("0", 31, 30.0, "t", _tracks())])

@@ -11,12 +11,16 @@ First public release. Highlights:
   by strategy (incl. the **evidence factual-accuracy** metric). Plus `CLAIMS.md` (claim →
   evidence → status), `REVIEW_GUIDE.md` (a 90-minute author sign-off session), and
   `docs/consumability.md` (the annotate→export→reload→resolve chain).
-- **Generalization tested on a second dataset.** `lerobot/svla_so100_stacking` (apache-2.0,
-  never-touched): the grounded strategy produced 0/20 failure-band episodes with grounded
-  evidence referencing the new scene — failure-band elimination now verified on two datasets
-  (`FRESH_TRIAL_REPORT.md`). During this run the Gemini key hit a credit limit (HTTP 429)
-  mid-annotation; the resilient `annotate_source` checkpointing kept all completed episodes
-  — confirming the resilience behaves correctly under a real mid-run failure (no fix needed).
+- **Generalization tested on a second dataset, paired.** `lerobot/svla_so100_stacking`
+  (apache-2.0, never-touched): grounded-Flash and S0-Flash both ran on the same 20 episodes —
+  baseline **8/20** failure-band, grounded **0/20**. Failure-band elimination now verified on
+  two datasets (`FRESH_TRIAL_REPORT.md`). During the first pass the Gemini key hit a credit
+  limit (HTTP 429); the resilient `annotate_source` checkpointing kept all completed episodes
+  — confirming the resilience behaves correctly under a real mid-run failure.
+- **Fix: NaN in empty parquet columns** (found on the fresh dataset). The baseline S0 has no
+  `phase` / `boundary_evidence`, which read back from parquet as float `NaN` (truthy) — the
+  inspect viewer would have rendered the literal string "nan". `segments_from_records` now
+  coerces NaN/empty to `None`; regression test added.
 
 
 - **Annotation-strategy layer (S0–S4)** between adapter and provider: frame-indexed

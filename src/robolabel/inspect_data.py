@@ -22,16 +22,31 @@ TRACK_COLORS = {
 }
 
 
+def _clean(v) -> str | None:
+    """None for missing/empty/NaN (empty parquet columns read back as float NaN)."""
+    if v is None:
+        return None
+    if isinstance(v, float) and v != v:  # NaN
+        return None
+    s = str(v).strip()
+    return s if s and s.lower() != "nan" else None
+
+
 def segments_from_records(subtasks: list[dict]) -> list[dict]:
-    """Convert episode_records()/parquet subtask rows into viewer segments."""
+    """Convert episode_records()/parquet subtask rows into viewer segments.
+
+    Empty ``phase`` / ``boundary_evidence`` columns (e.g. for the baseline S0, which
+    has neither) come out of parquet as float ``NaN``; coerce those to ``None`` so the
+    viewer doesn't render the literal string "nan".
+    """
     out = []
     for s in sorted(subtasks, key=lambda r: int(r.get("segment_idx") or 0)):
         out.append({
             "start": int(s.get("start_frame") or 0),
             "end": int(s.get("end_frame") or 0),
-            "phase": (s.get("phase") if s.get("phase") not in (None, "") else None),
-            "text": str(s.get("subtask_text") or ""),
-            "evidence": (s.get("boundary_evidence") if s.get("boundary_evidence") not in (None, "") else None),
+            "phase": _clean(s.get("phase")),
+            "text": _clean(s.get("subtask_text")) or "",
+            "evidence": _clean(s.get("boundary_evidence")),
         })
     return out
 

@@ -11,32 +11,32 @@ blue cube"* (a genuinely different task from SO-101 lego pick-place), `observati
 (v2.1 format risk + ~2500-frame episodes) for format safety and shorter clips. 20 episodes
 annotated.
 
-## Objective signal (computed now, gold-free)
+## Objective signal — paired, computed now, gold-free
 
-These need no human grading — they come straight from the fresh annotations.
+Both strategies ran on **exactly the same 20 episodes** (0–19). No human grading needed;
+these come straight from the fresh annotations.
 
-| | grounded-Flash (S2) | S0-Flash |
+| metric (over the same 20 episodes) | grounded-Flash (S2) | S0-Flash (baseline) |
 |---|---|---|
-| episodes annotated | **20 / 22** | **0** (see note) |
-| failure-band rate (degenerate or uniform-split) | **0 / 20** | — |
-| mean segments / episode | 5.2 | — |
-| episodes with per-boundary evidence | **20 / 20** | — |
+| **failure-band rate** (degenerate or uniform-split) | **0 / 20** | **8 / 20** (3 degenerate + 5 uniform) |
+| mean segments / episode | 5.2 | 4.0 |
+| per-boundary evidence present | 20 / 20 | — (S0 produces none) |
 
-Total API spend (both strategies): **$0.38 of the $10 ceiling**.
+Total API spend (both strategies, paired 20): **$0.765 of the $10 ceiling**.
 
-**The structural generalization result holds:** on a brand-new task, the grounded
-strategy produced **zero** degenerate or uniform-fifths episodes, real phase
-decompositions (mean 5.2 segments), and a frame-grounded evidence string on every
-boundary — and the evidence referenced the *new* scene ("red cube lifts off the table",
-"red cube arrives over the blue cube"), not parroted lego/brick. So the failure-band
-elimination claim is **verified on two datasets**.
+**The failure-band elimination result holds — and is stronger here.** On a brand-new task,
+paired on the same episodes, the baseline collapses **40% (8/20)** of episodes into a
+single blob or uniform fifths, while the grounded strategy collapses **none (0/20)**. On
+SO-101 held-out the same gap was 5/20 → 0/20; on this fresh dataset it is **8/20 → 0/20**.
+So the claim "frame grounding eliminates the degenerate/uniform failure bands" is now
+**verified on two datasets, paired**, with no S0-anchored gold involved. The grounded
+evidence also referenced the *new* scene ("red cube lifts off the table", "red cube arrives
+over the blue cube"), not parroted lego/brick — it is grounding to the actual video.
 
-**Note on S0-Flash (honest):** partway through, the Gemini key hit a prepayment/credit
-limit (HTTP 429). The pipeline's resilience handled it exactly as designed — 20 grounded
-episodes were checkpointed and saved despite 2 late failures; nothing crashed — but the S0
-contrast run, which started after credits were exhausted, got 0 episodes. The S0 contrast
-on this dataset was "budget permitting" and credits did not permit. It can be filled by
-topping up the key and re-running the `s0_flash` annotate command (it resumes).
+**Run note (honest):** the first annotation pass hit a Gemini credit limit (HTTP 429)
+mid-run; the resilient `annotate_source` checkpointing saved every completed episode
+(grounded 20/22), confirming the resilience works under a real mid-run failure. After a
+$10 top-up, S0-Flash was run on exactly those 20 episodes for the paired contrast above.
 
 ## Blind grading (subjective) — FILL by running the session
 
@@ -51,11 +51,14 @@ robolabel trial-report --grades fresh_stacking/grades.json \
   --unblind fresh_stacking/blind.unblind.json --out fresh_stacking/trial_tally.md
 ```
 
-Paste the resulting table here:
+The blind set is **40 items** — 20 grounded-Flash + 20 S0-Flash on the same episodes,
+shuffled with identity hidden. Grade as many as you like; `trial-report` aggregates over
+**whatever n you graded** (rates are computed only on graded items). Paste its table here:
 
-| strategy | items | boundary acceptance (±5f) | phase accuracy | **evidence factual-accuracy** | failure-band rate | usable / touch-up / garbage |
+| strategy | items graded | boundary acceptance (±5f) | phase accuracy | **evidence factual-accuracy** | failure-band rate | usable / touch-up / garbage |
 |---|---|---|---|---|---|---|
-| grounded-Flash | 20 | _fill_ | _fill_ | **_fill_** | 0.00 | _fill_ |
+| grounded-Flash | _n_ | _fill_ | _fill_ | **_fill_** | 0.00 | _fill_ |
+| S0-Flash | _n_ | _fill_ | _fill_ | — (no evidence) | 0.40 | _fill_ |
 
 **evidence factual-accuracy** is the metric no other tool reports: the fraction of the
 model's stated reasons ("gripper contacts brick") that are factually true of the exact

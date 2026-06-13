@@ -76,14 +76,16 @@ the baseline). Full writeup: [`STRATEGY_REPORT.md`](STRATEGY_REPORT.md).
   silently filter good data): Flash 3/30, Pro **1/30**.
 - **The free baseline loses.** A proprioceptive segmenter from the gripper signal (no VLM,
   $0) scores 0.18–0.20 IoU — the VLM beats it by ~0.10–0.25, so the API cost buys something.
-- **Generalization (fresh dataset).** On a second, never-touched dataset
-  (`lerobot/svla_so100_stacking`, apache-2.0, no baseline-anchored gold), the grounded
-  strategy produced **0 of 20** failure-band episodes, 5.2 segments/episode, and a
-  frame-grounded evidence string on every boundary that referenced the *new* scene — so
-  the **failure-band elimination is verified on two datasets** ([`FRESH_TRIAL_REPORT.md`](FRESH_TRIAL_REPORT.md)).
-  The *subjective* numbers (boundary acceptance, phase accuracy, **evidence factual-accuracy**)
-  are produced when you grade the clips blind in [`REVIEW_GUIDE.md`](REVIEW_GUIDE.md); until
-  then they are **not yet claimed** here — see "What is not yet shown."
+- **Generalization (fresh dataset, paired).** On a second, never-touched dataset
+  (`lerobot/svla_so100_stacking`, apache-2.0, no baseline-anchored gold), both strategies
+  ran on the same 20 episodes: the baseline collapsed **8 of 20 (40%)** into degenerate or
+  uniform-fifths blobs; the grounded strategy collapsed **0 of 20**
+  ([`FRESH_TRIAL_REPORT.md`](FRESH_TRIAL_REPORT.md)). So **failure-band elimination is
+  verified on two datasets** (SO-101 held-out 5/20→0; fresh 8/20→0), with the grounded
+  evidence referencing the *new* scene. The *subjective* numbers (boundary acceptance, phase
+  accuracy, **evidence factual-accuracy**) are produced when you grade the clips blind in
+  [`REVIEW_GUIDE.md`](REVIEW_GUIDE.md); until then they are **not yet claimed** — see "What
+  is not yet shown."
 
 Every claim above is itemized with its evidence and status in [`CLAIMS.md`](CLAIMS.md).
 
