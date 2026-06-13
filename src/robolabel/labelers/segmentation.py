@@ -235,19 +235,23 @@ def validate_grounded_segments(
         phase = str(item.get("phase") or "").strip().lower()
         if config.closed_vocabulary and phase not in vocab:
             phase = "other"
+        target = _clean_target(item.get("target"))
+        if config.require_target and target is None and phase != "retract":
+            raise SchemaValidationError(f"segment ({phase or 'phase'}) missing a target object")
         text = str(item.get("subtask_text") or item.get("text") or item.get("description") or "").strip()
         if not text:
-            text = phase or "subtask"
+            text = f"{phase} {target}".strip() if (phase or target) else "subtask"
         end_i = min(max(cursor, end_i), last)
         clean.append(SubtaskSegment(
             segment_idx=len(clean), start_frame=cursor, end_frame=end_i,
-            subtask_text=text[:160], phase=phase or None, evidence=evidence or None,
+            subtask_text=text[:160], phase=phase or None, evidence=evidence or None, target=target,
         ))
         cursor = end_i + 1
         if cursor > last:
             break
     if not clean:
         raise SchemaValidationError("no valid segments after parsing")
+    clean = _dedupe_trailing_phases(clean)  # collapse e.g. two consecutive "retract" tails
     clean[0].start_frame = 0
     clean[-1].end_frame = last
     if config.enforce_min_segments and len(clean) < rubric.strategy_min_segments:
@@ -262,11 +266,33 @@ def validate_grounded_segments(
     return clean
 
 
+_TARGET_NONE = {"", "none", "n/a", "na", "-", "null", "the scene", "scene", "object"}
+
+
+def _clean_target(value: object) -> str | None:
+    """Normalize a target string; '', 'none', 'n/a', etc. -> None."""
+    s = str(value or "").strip()
+    return s[:80] if s and s.lower() not in _TARGET_NONE else None
+
+
+def _dedupe_trailing_phases(segs: list[SubtaskSegment]) -> list[SubtaskSegment]:
+    """Collapse consecutive identical *trailing* phases into one (e.g. two 'retract')."""
+    while len(segs) >= 2 and segs[-1].phase and segs[-1].phase == segs[-2].phase:
+        merged_end = segs[-1].end_frame
+        merged_target = segs[-2].target or segs[-1].target
+        segs.pop()
+        segs[-1].end_frame = merged_end
+        segs[-1].target = merged_target
+    return segs
+
+
 def _retry_suffix(rubric: Rubric) -> str:
     return (
         f"Your previous answer was rejected. Return at least {rubric.strategy_min_segments} "
-        "segments, each with an integer end_frame chosen from the captioned frame indices and a "
-        "one-clause evidence string. Do not return a single segment."
+        "segments, each with an integer end_frame chosen from the captioned frame indices, a "
+        "one-clause evidence string, and a specific 'target' object named from the scene (which "
+        "one of the visible objects — disambiguate when several are present); 'target' may be "
+        "'none' only for the 'retract' phase. Do not return a single segment."
     )
 
 

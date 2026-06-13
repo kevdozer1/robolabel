@@ -21,6 +21,15 @@ First public release. Highlights:
   `phase` / `boundary_evidence`, which read back from parquet as float `NaN` (truthy) — the
   inspect viewer would have rendered the literal string "nan". `segments_from_records` now
   coerces NaN/empty to `None`; regression test added.
+- **Structured grounded labels (`phase → target`), schema v3.** Blind grading of the
+  fresh-dataset clips surfaced that grounded's first label was *under*specified — "approach"
+  with both a red and a blue cube in frame doesn't say which. The acceptance kit caught this
+  pre-launch. Grounded strategies (S2+) now emit a required `target` slot (the object/destination
+  named from the scene; `none` only for `retract`) alongside the closed-vocabulary `phase`, and
+  display everywhere as `phase → target`. Schema **v3** adds one additive `target` column —
+  **v1/v2 files still read**. Validation rejects an empty target on a non-retract phase (with the
+  capped re-prompt) and collapses the common "two retract steps" error via terminal-phase dedupe.
+  The frozen SO-101 ablation numbers are unchanged (reconstruction pins `require_target=False`).
 
 
 - **Annotation-strategy layer (S0–S4)** between adapter and provider: frame-indexed

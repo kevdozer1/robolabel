@@ -7,18 +7,20 @@ other.
 
 ## `annotations.parquet` (VLM output)
 
-Schema version: **`robolabel/annotations/v2`** (stored in every row's
+Schema version: **`robolabel/annotations/v3`** (stored in every row's
 `schema_version` column; bump it on any breaking change). Long format — one row
 per record, three record types per episode.
 
 **v2** adds three columns for the annotation-strategy layer: `phase` and
-`boundary_evidence` (per subtask) and `strategy` (per episode). They are optional
-and null under the baseline strategy (S0). **v1 files still read** — the new
-columns are simply absent and treated as null.
+`boundary_evidence` (per subtask) and `strategy` (per episode). **v3** adds one
+more per-subtask column, `target` — the grounded object/destination slot, so a
+label reads `phase → target` (e.g. `approach → red cube`). All of these are
+optional and null under the baseline strategy (S0). The change is purely
+**additive**: **v1 and v2 files still read** — absent columns are treated as null.
 
 | column | type | record types | meaning |
 |---|---|---|---|
-| `schema_version` | str | all | `robolabel/annotations/v2` |
+| `schema_version` | str | all | `robolabel/annotations/v3` |
 | `source` | str | all | always `vlm` in this file |
 | `episode_id` | str | all | stable id from the adapter |
 | `task` | str? | all | task string if the dataset has one |
@@ -30,6 +32,7 @@ columns are simply absent and treated as null.
 | `end_frame` | int? | subtask | inclusive end frame |
 | `subtask_text` | str? | subtask | short action phrase |
 | `phase` | str? | subtask | **v2**; closed-vocabulary phase (S2+), e.g. `approach`/`grasp` |
+| `target` | str? | subtask | **v3**; grounded object/destination this subtask acts on (S2+), e.g. `red cube`; null for `retract` |
 | `boundary_evidence` | str? | subtask | **v2**; one-line visual evidence for the boundary (S1+) |
 | `quality` | int? | episode_metadata | curation/training-usefulness, 1–5 |
 | `task_success_quality` | int? | episode_metadata | task-completion score, 1–5 |

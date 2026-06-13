@@ -51,6 +51,10 @@ class StrategyConfig:
     # one segment). "reject": re-prompt then fall back (the behavior the ablation was run
     # under; set this to reproduce STRATEGY_REPORT.md exactly).
     min_granularity_policy: str = "warn"
+    # v3: require a grounded object/destination `target` per segment ("approach -> red cube").
+    # Empty target is rejected and re-prompted (except `retract`, where "none" is allowed).
+    # Off when reconstructing pre-v3 cached receipts (which carry no target).
+    require_target: bool = False
     max_label_attempts: int = 1       # re-prompts when grounded validation fails
     # post-passes
     refine_boundaries: bool = False   # S3+: dense-window per-boundary refinement
@@ -85,12 +89,13 @@ PRESETS: dict[str, StrategyConfig] = {
     ),
     "S2": StrategyConfig(
         name="S2",
-        description="S1 + closed phase vocabulary + minimum granularity (reject single-segment)",
+        description="S1 + closed phase vocabulary + min granularity + grounded target (phase -> target)",
         frame_count=12,
         caption_timestamps=True,
         grounded=True,
         closed_vocabulary=True,
         enforce_min_segments=True,
+        require_target=True,
         max_label_attempts=3,
     ),
     "S3": StrategyConfig(
@@ -101,6 +106,7 @@ PRESETS: dict[str, StrategyConfig] = {
         grounded=True,
         closed_vocabulary=True,
         enforce_min_segments=True,
+        require_target=True,
         max_label_attempts=3,
         refine_boundaries=True,
         refine_window=15,
@@ -113,6 +119,7 @@ PRESETS: dict[str, StrategyConfig] = {
         grounded=True,
         closed_vocabulary=True,
         enforce_min_segments=True,
+        require_target=True,
         max_label_attempts=3,
         refine_boundaries=True,
         refine_window=15,

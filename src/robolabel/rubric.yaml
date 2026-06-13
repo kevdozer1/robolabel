@@ -126,17 +126,21 @@ strategies:
     {observations}
     For each subtask return:
       - "phase": exactly one of {phase_vocabulary}
+      - "target": the SPECIFIC object or destination this subtask acts on, named from the
+        scene — e.g. "red cube", "blue cube", "the box". When several similar objects are
+        present (two cubes, several bricks), you MUST disambiguate which one. Required for
+        every phase EXCEPT "retract", where "none" is allowed.
       - "end_frame": the integer frame index (from the captions above) where this
         subtask ends and the next begins — choose the frame where the transition
         is actually visible, not an even division of the episode
       - "evidence": one short clause naming the visible event at that boundary
-        (e.g. "gripper contacts brick", "brick released inside box")
+        (e.g. "gripper contacts the red cube", "red cube released on the blue cube")
       - "subtask_text": a short action phrase naming the object/destination
     Boundaries must be strictly increasing frame indices, contiguous, and cover
     the whole episode (frames 0 through {last_frame}). Do not return a single
     segment. Do not place boundaries at uniform fractions of the duration.
     Return ONLY valid JSON:
-    {"segments":[{"phase":"approach","end_frame":40,"evidence":"gripper above brick","subtask_text":"move to the brick"}]}
+    {"segments":[{"phase":"approach","target":"red cube","end_frame":40,"evidence":"gripper above the red cube","subtask_text":"move to the red cube"}]}
   # Dense-window refinement (S3): pin one boundary to its exact transition frame.
   refine_prompt: |
     Find the EXACT frame where one subtask transition happens in a robot

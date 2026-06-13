@@ -9,6 +9,8 @@ the drafted issue replies) mapped to the artifact that supports it and a status:
 - **mechanical-only** — the code runs / a format check passes, but it is not evidence of
   usefulness.
 - **untested** — not demonstrated. Stated as such; never implied otherwise.
+- **fixed-and-spot-checked-pending** — a code/format change is verified by tests and a live
+  re-annotation, but the *quality* of the result still awaits the author's spot-check.
 
 The README may only assert **verified** and **verified-on-one-dataset (with the caveat)**
 rows. Everything else is described as not-yet-shown.
@@ -29,6 +31,7 @@ rows. Everything else is described as not-yet-shown.
 | 12 | Evidence strings are factually true of their cited frame ("evidence factual-accuracy") | the `inspect` evidence tab + blind trial → `FRESH_TRIAL_REPORT.md` | **untested until the blind trial is graded** |
 | 13 | The findings generalize to a dataset with no S0-anchored gold | fresh stacking set: failure-band rate computable now (objective); boundary/phase/evidence acceptance via the blind trial | **untested until the blind trial is graded** (objective failure-band: see fresh report) |
 | 14 | These conditioning annotations improve downstream training | `docs/why.md` — preregistered head-to-head; not shown, and on one careful test, no | **untested (explicitly; on one test, negative)** |
+| 15 | Grounded labels name the specific target object (`phase → target`), so disambiguation is possible when several similar objects are present (the "which cube?" gap that blind grading surfaced) | schema v3 `target` column + validation tests (`test_require_target_*`, `test_terminal_phase_dedupe_*`); re-annotated fresh set `fresh_stacking/grounded_flash_v3` | **fixed-and-spot-checked-pending** |
 
 ## Caveats that must travel with the "verified-on-one-dataset" rows
 

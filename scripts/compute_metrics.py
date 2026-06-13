@@ -120,9 +120,9 @@ def reconstruct_vlm(eval_out: Path, model_dir: str, model_name: str, strategy: s
                     episodes: dict, rubric) -> dict[str, list]:
     from robolabel.providers.base import build_provider
     provider = build_provider("gemini", model_name)
-    # The ablation ran under the prior hard-reject granularity policy; pin it so the
-    # reconstruction stays faithful to the reported run (the current default is "warn").
-    cfg = replace(load_strategy(strategy), min_granularity_policy="reject")
+    # The ablation ran under the prior hard-reject granularity policy and pre-v3 (no
+    # target); pin both so reconstruction stays faithful to the reported (cached) run.
+    cfg = replace(load_strategy(strategy), min_granularity_policy="reject", require_target=False)
     segs: dict[str, list] = {}
     for eid, ep in episodes.items():
         rdir = eval_out / model_dir / strategy / "raw_receipts" / eid

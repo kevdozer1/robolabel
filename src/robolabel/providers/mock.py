@@ -73,7 +73,9 @@ def _mock_answer(question: str, last_frame: int, labels: list[int] | None = None
             {
                 "segments": [
                     {"segment_idx": i, "start_frame": s, "end_frame": e,
-                     "phase": _MOCK_PHASES[i], "subtask_text": f"{_MOCK_PHASES[i]} the object",
+                     "phase": _MOCK_PHASES[i],
+                     "target": ("none" if _MOCK_PHASES[i] == "retract" else "the mock object"),
+                     "subtask_text": f"{_MOCK_PHASES[i]} the object",
                      "evidence": f"mock evidence: {_MOCK_PHASES[i]} visible near frame {e}"}
                     for i, (s, e) in enumerate(quarters)
                 ]

@@ -79,15 +79,16 @@ _S2 = PRESETS["S2"]
 
 def test_validate_grounded_good_case():
     raw = {"segments": [
-        {"phase": "approach", "end_frame": 10, "evidence": "gripper above brick", "subtask_text": "move to brick"},
-        {"phase": "grasp", "end_frame": 20, "evidence": "gripper closes", "subtask_text": "grasp brick"},
-        {"phase": "transport", "end_frame": 30, "evidence": "brick lifted", "subtask_text": "carry brick"},
+        {"phase": "approach", "target": "red brick", "end_frame": 10, "evidence": "gripper above brick", "subtask_text": "move to brick"},
+        {"phase": "grasp", "target": "red brick", "end_frame": 20, "evidence": "gripper closes", "subtask_text": "grasp brick"},
+        {"phase": "transport", "target": "the box", "end_frame": 30, "evidence": "brick lifted", "subtask_text": "carry brick"},
     ]}
     segs = validate_grounded_segments(raw, 31, _S2, _RUBRIC)
     assert [s.end_frame for s in segs] == [10, 20, 30]
     assert segs[0].start_frame == 0 and segs[-1].end_frame == 30
     assert all(s.evidence for s in segs)
     assert [s.phase for s in segs] == ["approach", "grasp", "transport"]
+    assert [s.target for s in segs] == ["red brick", "red brick", "the box"]
 
 
 def test_validate_grounded_missing_evidence_raises():
@@ -104,7 +105,8 @@ def test_validate_grounded_non_integer_end_frame_raises():
 
 
 def test_validate_grounded_degenerate_single_segment_raises_when_enforced():
-    raw = {"segments": [{"phase": "other", "end_frame": 30, "evidence": "did the task", "subtask_text": "complete"}]}
+    raw = {"segments": [{"phase": "other", "target": "the workpiece", "end_frame": 30,
+                         "evidence": "did the task", "subtask_text": "complete"}]}
     with pytest.raises(SchemaValidationError):
         validate_grounded_segments(raw, 31, _S2, _RUBRIC)  # S2 enforces min segments
     # S1 does not enforce granularity, so a single grounded segment is allowed.
@@ -114,12 +116,79 @@ def test_validate_grounded_degenerate_single_segment_raises_when_enforced():
 
 def test_validate_grounded_unknown_phase_coerced_to_other():
     raw = {"segments": [
-        {"phase": "teleport", "end_frame": 10, "evidence": "e", "subtask_text": "x"},
-        {"phase": "grasp", "end_frame": 20, "evidence": "e", "subtask_text": "y"},
-        {"phase": "retract", "end_frame": 30, "evidence": "e", "subtask_text": "z"},
+        {"phase": "teleport", "target": "red cube", "end_frame": 10, "evidence": "e", "subtask_text": "x"},
+        {"phase": "grasp", "target": "red cube", "end_frame": 20, "evidence": "e", "subtask_text": "y"},
+        {"phase": "retract", "end_frame": 30, "evidence": "e", "subtask_text": "z"},  # retract: target 'none' allowed
     ]}
     segs = validate_grounded_segments(raw, 31, _S2, _RUBRIC)
     assert segs[0].phase == "other"
+    assert segs[-1].phase == "retract" and segs[-1].target is None
+
+
+def test_require_target_rejects_empty_non_retract():
+    # require_target (S2/S3/S4) rejects a non-retract phase whose target is missing/blank.
+    for bad in (None, "", "  ", "none", "the scene", "object"):
+        raw = {"segments": [
+            {"phase": "approach", "target": bad, "end_frame": 10, "evidence": "e", "subtask_text": "x"},
+            {"phase": "grasp", "target": "red cube", "end_frame": 20, "evidence": "e", "subtask_text": "y"},
+            {"phase": "transport", "target": "the box", "end_frame": 30, "evidence": "e", "subtask_text": "z"},
+        ]}
+        with pytest.raises(SchemaValidationError, match="target"):
+            validate_grounded_segments(raw, 31, _S2, _RUBRIC)
+
+
+def test_require_target_allows_none_for_retract():
+    # 'retract' is the one phase where a missing/"none" target is acceptable.
+    raw = {"segments": [
+        {"phase": "approach", "target": "red cube", "end_frame": 10, "evidence": "e", "subtask_text": "x"},
+        {"phase": "transport", "target": "the box", "end_frame": 20, "evidence": "e", "subtask_text": "y"},
+        {"phase": "retract", "target": "none", "end_frame": 30, "evidence": "e", "subtask_text": "z"},
+    ]}
+    segs = validate_grounded_segments(raw, 31, _S2, _RUBRIC)
+    assert segs[-1].phase == "retract" and segs[-1].target is None
+
+
+def test_terminal_phase_dedupe_collapses_double_retract():
+    # The graded "two retract steps" error: consecutive identical trailing phases collapse
+    # into one segment spanning to the last frame, keeping the earlier target.
+    raw = {"segments": [
+        {"phase": "approach", "target": "red cube", "end_frame": 10, "evidence": "e", "subtask_text": "x"},
+        {"phase": "grasp", "target": "red cube", "end_frame": 20, "evidence": "e", "subtask_text": "y"},
+        {"phase": "retract", "target": "none", "end_frame": 26, "evidence": "e", "subtask_text": "pull back"},
+        {"phase": "retract", "target": "none", "end_frame": 30, "evidence": "e", "subtask_text": "pull back more"},
+    ]}
+    segs = validate_grounded_segments(raw, 31, _S2, _RUBRIC)
+    assert [s.phase for s in segs] == ["approach", "grasp", "retract"]
+    assert segs[-1].end_frame == 30                    # merged tail spans to the last frame
+    assert segs[-1].start_frame == 21                  # and starts where the first retract did
+
+
+def test_schema_v3_target_roundtrips(tmp_path: Path):
+    # A v3 annotation with targets writes and reads back the target column intact.
+    ann = EpisodeAnnotation(
+        episode_id="0", task="stack", num_frames=31, fps=30.0, provider="mock", model="mock",
+        strategy="S2",
+        subtasks=[
+            SubtaskSegment(0, 0, 10, "move to red cube", phase="approach", target="red cube", evidence="e0"),
+            SubtaskSegment(1, 11, 30, "pull back", phase="retract", target=None, evidence="e1"),
+        ],
+    )
+    write_annotations([ann], tmp_path)
+    back = read_annotations(tmp_path)
+    recs = sorted(episode_records(back, "0")["subtasks"], key=lambda r: r["segment_idx"])
+    assert recs[0]["target"] == "red cube"
+    assert recs[0]["phase"] == "approach"
+    # retract's None target survives the round-trip as a falsy/empty value.
+    assert not _clean_str(recs[1].get("target"))
+
+
+def _clean_str(v) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, float) and v != v:  # NaN
+        return ""
+    s = str(v).strip()
+    return "" if s.lower() in ("", "nan", "none") else s
 
 
 # --------------------------------------------------------------------------- #
@@ -154,7 +223,7 @@ class _SingleSegProvider:
         last = int(max(frame_labels)) if frame_labels else 0
         # grounded-label check before events (the label prompt embeds the observe events).
         if "end_frame" in q and "phase" in q:
-            ans = json.dumps({"segments": [{"phase": "other", "end_frame": last,
+            ans = json.dumps({"segments": [{"phase": "other", "target": "the workpiece", "end_frame": last,
                                             "evidence": "one continuous action", "subtask_text": "do the whole task"}]})
         elif '"events"' in q:
             ans = json.dumps({"events": [{"frame": last // 2, "evidence": "e"}], "objects": ["o"]})

@@ -7,7 +7,7 @@ and this package gives you the measurement and the human calibration loop.
 
 __version__ = "0.1.0"
 
-# v2 adds two optional subtask columns (`phase`, `boundary_evidence`) and an
-# episode-level `strategy` column for the annotation-strategy layer. v1 files
-# still read: the new columns are simply absent and treated as null.
-SCHEMA_VERSION = "robolabel/annotations/v2"
+# v2 added `phase`, `boundary_evidence`, `strategy`. v3 adds a `target` subtask column
+# (the grounded object/destination slot — "phase -> target"). Additive: v1/v2 files still
+# read — absent columns are treated as null.
+SCHEMA_VERSION = "robolabel/annotations/v3"

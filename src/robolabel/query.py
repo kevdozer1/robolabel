@@ -22,6 +22,14 @@ from .gate import run_gate
 from .schema import episode_records, list_episode_ids, read_annotations
 
 
+def _clean_target(v: object) -> str | None:
+    """None for missing/empty/NaN targets (empty parquet cells read back as float NaN)."""
+    if v is None or (isinstance(v, float) and v != v):  # None or NaN
+        return None
+    s = str(v).strip()
+    return s if s and s.lower() not in ("nan", "none") else None
+
+
 def find_phase_segments(annotations_dir: str | Path, phase: str) -> list[dict[str, Any]]:
     """All subtask segments whose phase matches ``phase`` (case-insensitive), across episodes."""
     df = read_annotations(annotations_dir)
@@ -35,6 +43,7 @@ def find_phase_segments(annotations_dir: str | Path, phase: str) -> list[dict[st
                 hits.append({"episode_id": eid, "segment_idx": int(s.get("segment_idx") or 0),
                              "start_frame": start, "end_frame": end, "mid_frame": (start + end) // 2,
                              "text": str(s.get("subtask_text") or ""),
+                             "target": _clean_target(s.get("target")),
                              "evidence": s.get("boundary_evidence")})
     return hits
 
@@ -61,7 +70,8 @@ def phase_contact_sheet(annotations_dir: str | Path, phase: str, *, source=None,
         img = img.resize((thumb, max(1, int(img.height * ratio))))
         canvas = Image.new("RGB", (img.width, img.height + 18), "white")
         canvas.paste(img, (0, 18))
-        ImageDraw.Draw(canvas).text((4, 4), f"ep{h['episode_id']} f{h['mid_frame']}", fill=(0, 0, 0))
+        cap = f"ep{h['episode_id']} f{h['mid_frame']}" + (f" → {h['target']}" if h.get("target") else "")
+        ImageDraw.Draw(canvas).text((4, 4), cap, fill=(0, 0, 0))
         tiles.append(canvas)
     if not tiles:
         result["note"] = "no frames rendered (no matching segments or no source frames)"

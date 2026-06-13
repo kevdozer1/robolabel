@@ -64,6 +64,17 @@ model's stated reasons ("gripper contacts brick") that are factually true of the
 frame they cite. It is the difference between "the boundary happened to land right" and
 "the model knew why."
 
+### Structured-label re-annotation (`phase → target`, schema v3)
+
+In response to the underspecification above, the 20 episodes were re-annotated with the
+patched grounded strategy (S2 + required `target`; `fresh_stacking/grounded_flash_v3`).
+Objective re-check: the **failure-band rate stays 0 / 20**, and **79 / 79 (100%)** of
+non-retract segments now carry a grounded target — e.g. the previously-bare first label is
+now `approach → red cube`, and a two-cube scene reads `transport → blue cube`. The label
+*format* fix is verified by tests and this live run; the *phase-accuracy* number above is
+re-gradeable from the rebuilt `inspect_data/fresh_v3.json` (author spot-check pending — see
+`CLAIMS.md` row 15, status `fixed-and-spot-checked-pending`).
+
 ## What this report licenses the README to claim
 
 - **Verified on two datasets:** grounding eliminates the degenerate/uniform failure bands

@@ -49,6 +49,7 @@ def _dummy_ep(eid, num_frames, task):
 
 def _segs(segments) -> list[dict]:
     return [{"start": s.start_frame, "end": s.end_frame, "phase": s.phase,
+             "target": getattr(s, "target", None),
              "text": s.subtask_text, "evidence": s.evidence} for s in segments]
 
 
@@ -68,7 +69,7 @@ def _uniform5(n):
 def _reconstruct(eval_out, model_dir, model_name, strat, eps, rubric):
     from robolabel.providers.base import build_provider
     prov = build_provider("gemini", model_name)
-    cfg = replace(load_strategy(strat), min_granularity_policy="reject")
+    cfg = replace(load_strategy(strat), min_granularity_policy="reject", require_target=False)
     out = {}
     for eid, ep in eps.items():
         rdir = Path(eval_out) / model_dir / strat / "raw_receipts" / eid

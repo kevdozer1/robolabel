@@ -2,7 +2,7 @@
 
 A viewer payload is ``{dataset, source_kind, track_order, track_colors, episodes:[...]}``.
 Each episode carries several **tracks** (gold + each strategy/baseline), where a track is
-a list of ``{start,end,phase,text,evidence}`` segments, plus per-track **metrics**
+a list of ``{start,end,phase,target,text,evidence}`` segments, plus per-track **metrics**
 against the gold track. Pure functions here; the heavy reconstruction lives in
 ``scripts/build_inspect_data.py`` and the serving in ``inspect_server.py``.
 """
@@ -45,6 +45,7 @@ def segments_from_records(subtasks: list[dict]) -> list[dict]:
             "start": int(s.get("start_frame") or 0),
             "end": int(s.get("end_frame") or 0),
             "phase": _clean(s.get("phase")),
+            "target": _clean(s.get("target")),
             "text": _clean(s.get("subtask_text")) or "",
             "evidence": _clean(s.get("boundary_evidence")),
         })

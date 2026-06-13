@@ -359,7 +359,7 @@ function renderTracks(){const root=document.getElementById('tracks');root.innerH
   const bar=document.createElement('div');bar.className='bar playhead';bar.dataset.name=name;
   for(const s of t.segments){const d=document.createElement('div');d.className='seg';
    d.style.width=Math.max(1.2,((s.end-s.start+1)/tot)*100)+'%';d.style.background=S.track_colors[name]||'#888';
-   const lab=s.phase||s.text||'';d.textContent=lab;d.title=`${s.start}-${s.end}: ${lab}`+(s.evidence?(' — '+s.evidence):'');
+   const lab=segLabel(s);d.textContent=lab;d.title=`${s.start}-${s.end}: ${lab}`+(s.evidence?(' — '+s.evidence):'');
    d.onclick=()=>seekFrame(s.start);bar.appendChild(d);}
   const ph=document.createElement('div');ph.className='phline';bar.appendChild(ph);wrap.appendChild(bar);root.appendChild(wrap);}
  updatePlayheads();}
@@ -381,14 +381,14 @@ function renderEvidence(p){const name=gName();const t=E.tracks[name];if(!t){p.in
  p.innerHTML=`<div class="muted">Each evidence string with a thumbnail of its cited frame (segment end). Click the image to jump there and judge whether the claim is true of that frame.</div>`;
  t.segments.forEach((s,i)=>{if(s.evidence==null&&s.phase==null)return;const fr=s.end;const ev=document.createElement('div');ev.className='ev';
   ev.innerHTML=`<img src="/frame/${encodeURIComponent(frameEp())}/${fr}" onclick="seekFrame(${fr})">
-   <div class="evtxt"><div class="evf">seg ${i} · phase <b>${esc(s.phase||'–')}</b> · cited frame ${fr}</div>${esc(s.evidence||'(no evidence string)')}
+   <div class="evtxt"><div class="evf">seg ${i} · <b>${esc(segLabel(s)||'–')}</b> · cited frame ${fr}</div>${esc(s.evidence||'(no evidence string)')}
    ${S.blind?evJudge('ev'+i):''}</div>`;p.appendChild(ev);});}
 function evJudge(key){return `<div class="judge"><button class="btn j-yes" onclick="setG('${key}',true,this)">true</button><button class="btn j-no" onclick="setG('${key}',false,this)">false</button></div>`;}
 let G={};
 function setG(key,val,btn){G[key]=val;const par=btn.parentElement;par.querySelector('.j-yes').classList.toggle('sel',val===true);par.querySelector('.j-no').classList.toggle('sel',val===false);}
 function renderGrade(p){const name=gName();const t=E.tracks[name];G=(E.existing_grade&&E.existing_grade.marks)||{};
  let bh='';t.segments.slice(0,-1).forEach((s,i)=>{bh+=`<div class="ev" style="grid-template-columns:96px 1fr"><img src="/frame/${encodeURIComponent(frameEp())}/${s.end}" onclick="seekFrame(${s.end})">
-   <div class="evtxt"><div class="evf">boundary ${i} at frame ${s.end} (phase ${esc(s.phase||'–')})</div>
+   <div class="evtxt"><div class="evf">boundary ${i} at frame ${s.end} (${esc(segLabel(s)||'–')})</div>
    <div>boundary within ±5 of truth?${judgeBtns('b'+i)}</div><div style="margin-top:5px">phase label correct?${judgeBtns('p'+i)}</div>
    <div style="margin-top:5px">evidence true of frame?${judgeBtns('e'+i)}</div></div></div>`;});
  p.innerHTML=`<div class="muted">Blind: track identity hidden. Grade against the VIDEO, not any reference. Scrub freely.</div>
@@ -408,6 +408,7 @@ async function saveGrade(){const verdict=document.querySelector('input[name=verd
  if(!res.saved){alert('Grade NOT saved: '+(res.error||'unknown')+'\n\nRelaunch with --grades <file>.');return;}
  S=await j('/api/state');document.getElementById('meta').innerHTML=`<span>${esc(S.dataset)}</span><span>${S.episodes.length} episodes</span><span class="badge">BLIND TRIAL ${S.graded_count}/${S.episodes.length} graded · saved to grades file</span>`;
  const ung=S.episodes.find(e=>!e.graded);renderQueue();if(ung)load(ung.episode_id);else alert('All items graded. Now run:\n  robolabel trial-report --grades <file> --unblind fresh_stacking/blind.unblind.json');}
+function segLabel(s){return s.phase?(s.phase+(s.target?(' → '+s.target):'')):(s.text||'');}
 function fmt(v){return v==null?'–':Number(v).toFixed(2);}
 function esc(t){return String(t==null?'':t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 document.addEventListener('keydown',e=>{if(e.target.matches('input,textarea,select'))return;

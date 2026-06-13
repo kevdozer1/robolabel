@@ -33,6 +33,22 @@ grasp across the dataset* as a contact sheet:
 
 ![Every segment robolabel labeled "grasp", one tile per episode.](docs/figures/grasp_montage.png)
 
+Each grounded segment is labeled **`phase → target`** — a closed-vocabulary phase *and* the
+specific object it acts on, named from the scene, so two cubes don't both come back as a bare
+"approach":
+
+```text
+approach      → red cube    frames 0–41     "gripper descends toward the red cube"
+grasp         → red cube    frames 42–70    "fingers close on the red cube"
+transport     → blue cube   frames 71–119   "red cube lifted over the blue cube"
+release-place → blue cube   frames 120–168  "red cube set on top of the blue cube"
+retract                     frames 169–199  "arm withdraws, gripper empty"
+```
+
+The phase comes from a fixed vocabulary (objective across videosets); the target is grounded
+in the scene (specific). `target` is required for every phase except `retract`. See
+[`SCHEMA.md`](SCHEMA.md) for the column.
+
 ## 60-second quickstart
 
 ```bash
