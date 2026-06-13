@@ -402,9 +402,12 @@ function judgeBtns(key){return `<span class="judge" data-k="${key}" style="displ
 function vOpt(v,label){return `<label><input type="radio" name="verdict" value="${v}"> ${label}</label>`;}
 async function saveGrade(){const verdict=document.querySelector('input[name=verdict]:checked')?.value||null;
  const payload={episode_id:E.episode_id,track:gName(),marks:G,verdict};
- const res=await j('/api/grade',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
- S=await j('/api/state');document.getElementById('meta').innerHTML=`<span>${esc(S.dataset)}</span><span>${S.episodes.length} episodes</span><span class="badge">BLIND TRIAL ${S.graded_count}/${S.episodes.length} graded</span>`;
- const order=queueOrder();const ung=S.episodes.find(e=>!e.graded);renderQueue();if(ung)load(ung.episode_id);else alert('All episodes graded. Run: robolabel trial-report');}
+ let res;
+ try{res=await j('/api/grade',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});}
+ catch(err){alert('Grade NOT saved: '+err.message+'\n\nRelaunch the viewer with --grades <file> so grades can be recorded.');return;}
+ if(!res.saved){alert('Grade NOT saved: '+(res.error||'unknown')+'\n\nRelaunch with --grades <file>.');return;}
+ S=await j('/api/state');document.getElementById('meta').innerHTML=`<span>${esc(S.dataset)}</span><span>${S.episodes.length} episodes</span><span class="badge">BLIND TRIAL ${S.graded_count}/${S.episodes.length} graded · saved to grades file</span>`;
+ const ung=S.episodes.find(e=>!e.graded);renderQueue();if(ung)load(ung.episode_id);else alert('All items graded. Now run:\n  robolabel trial-report --grades <file> --unblind fresh_stacking/blind.unblind.json');}
 function fmt(v){return v==null?'–':Number(v).toFixed(2);}
 function esc(t){return String(t==null?'':t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 document.addEventListener('keydown',e=>{if(e.target.matches('input,textarea,select'))return;

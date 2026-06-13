@@ -227,10 +227,32 @@ def _query(args) -> int:
 
 
 def _trial_report(args) -> int:
+    import os
+
     from .trial_report import write_trial_report
 
+    if not os.path.exists(args.grades):
+        print(
+            f"No grades file at {args.grades} yet — nothing has been graded.\n\n"
+            "Grades are written only when you save items in the viewer's Grade tab, and only\n"
+            "if the viewer was launched with --grades pointing at this file. Do this first:\n\n"
+            f"  robolabel inspect --data fresh_stacking/blind.json --grades {args.grades} \\\n"
+            "    --source lerobot --target lerobot/svla_so100_stacking --camera-key observation.images.top\n\n"
+            "then open the 'Grade' tab, mark an item, and click 'Save grade & next' — that creates\n"
+            f"{args.grades}. Re-run this command once you've graded at least one item.",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        graded = json.loads(Path(args.grades).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        graded = {}
+    if not graded:
+        print(f"{args.grades} exists but is empty — grade at least one item in the viewer first.",
+              file=sys.stderr)
+        return 2
     out = write_trial_report(args.grades, args.unblind, args.out)
-    print(f"wrote {out}")
+    print(f"wrote {out} ({len(graded)} item(s) graded)")
     return 0
 
 
