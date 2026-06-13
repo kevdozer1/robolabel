@@ -180,8 +180,13 @@ def from_annotations(args):
             iid = f"T{i:03d}"
             it["episode_id"] = iid
             it["n_flags"] = len(it["gate_flags"])
+            # denominators for the mark-failures-only tally: the grade panel asks one
+            # boundary/phase/evidence question per non-final segment.
+            graded = it["tracks"]["model"]["segments"][:-1]
+            denom = {"b": len(graded), "p": len(graded),
+                     "e": sum(1 for s in graded if s.get("evidence"))}
             unblind[iid] = {"episode_id": it.pop("_real_ep"), "strategy": it.pop("_strategy"),
-                            "bands": it.pop("_bands")}
+                            "bands": it.pop("_bands"), "denom": denom}
         payload = assemble(args.dataset or "", "lerobot", ["model"], items, blind=True)
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)

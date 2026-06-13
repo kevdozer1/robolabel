@@ -68,6 +68,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("trial-report", help="Tally a blind-trial grades file into a markdown report.")
     p.add_argument("--grades", required=True)
     p.add_argument("--unblind", required=True, help="the *.unblind.json map (item_id->strategy) from build_inspect_data --blind")
+    p.add_argument("--protocol", choices=["mark-failures-only", "mark-all"], default="mark-failures-only",
+                   help="mark-failures-only (default): unmarked = pass over the known denominator.")
     p.add_argument("--out", default="FRESH_TRIAL_REPORT.md")
 
     p = sub.add_parser("reliability", help="VLM-vs-human agreement from a gold file.")
@@ -251,8 +253,8 @@ def _trial_report(args) -> int:
         print(f"{args.grades} exists but is empty — grade at least one item in the viewer first.",
               file=sys.stderr)
         return 2
-    out = write_trial_report(args.grades, args.unblind, args.out)
-    print(f"wrote {out} ({len(graded)} item(s) graded)")
+    out = write_trial_report(args.grades, args.unblind, args.out, protocol=args.protocol)
+    print(f"wrote {out} ({len(graded)} item(s) graded, protocol={args.protocol})")
     return 0
 
 

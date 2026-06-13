@@ -38,27 +38,26 @@ mid-run; the resilient `annotate_source` checkpointing saved every completed epi
 (grounded 20/22), confirming the resilience works under a real mid-run failure. After a
 $10 top-up, S0-Flash was run on exactly those 20 episodes for the paired contrast above.
 
-## Blind grading (subjective) — FILL by running the session
+## Blind grading (subjective) — author's session, all 40 items
 
-The boundary/phase/evidence acceptance numbers are **the author's to produce**, blind
-(strategy identity hidden, against the video only). Run:
+The 40 blind items (20 grounded-Flash + 20 S0-Flash, same episodes, identity hidden,
+shuffled) were graded blind by the author against the video. **Grading protocol:
+mark-failures-only — the grader marked only the failures; every unmarked boundary, phase,
+and evidence string counts as a pass over the known denominator** (the number of
+boundaries / phases / evidence slots in the graded items, not just the marks entered).
 
-```bash
-robolabel inspect --data fresh_stacking/blind.json --grades fresh_stacking/grades.json \
-  --source lerobot --target lerobot/svla_so100_stacking --camera-key observation.images.top
-# grade every item in the Grade tab, then:
-robolabel trial-report --grades fresh_stacking/grades.json \
-  --unblind fresh_stacking/blind.unblind.json --out fresh_stacking/trial_tally.md
-```
-
-The blind set is **40 items** — 20 grounded-Flash + 20 S0-Flash on the same episodes,
-shuffled with identity hidden. Grade as many as you like; `trial-report` aggregates over
-**whatever n you graded** (rates are computed only on graded items). Paste its table here:
-
-| strategy | items graded | boundary acceptance (±5f) | phase accuracy | **evidence factual-accuracy** | failure-band rate | usable / touch-up / garbage |
+| strategy | items | boundary acceptance (±5f) | phase accuracy | **evidence factual-accuracy** | failure-band | usable / touch-up / garbage |
 |---|---|---|---|---|---|---|
-| grounded-Flash | _n_ | _fill_ | _fill_ | **_fill_** | 0.00 | _fill_ |
-| S0-Flash | _n_ | _fill_ | _fill_ | — (no evidence) | 0.40 | _fill_ |
+| **grounded-Flash** | 20 | **0.86** (n=84) | 0.80 (n=84) | **0.98** (n=84) | **0.00** | **14 / 4 / 2** |
+| S0-Flash | 20 | 0.66 (n=61) | 0.89 (n=61) | n/a (no evidence) | 0.40 | 4 / 6 / 9 |
+
+**Read:** grounded wins decisively on boundaries (0.86 vs 0.66), on the verdict (14
+"usable" vs 4), and on the metric no other tool reports — **evidence factual-accuracy
+0.98**, i.e. when the model says "red cube lifts off the table" it is true of the cited
+frame 98% of the time. The one place grounded *loses* is **phase accuracy (0.80 vs S0's
+free-text 0.89)** — which is precisely the **label-underspecification** flaw the author's
+grading surfaced: the closed phase label ("approach") often doesn't say *which* object.
+The structured-label patch (phase → target) targets exactly this number.
 
 **evidence factual-accuracy** is the metric no other tool reports: the fraction of the
 model's stated reasons ("gripper contacts brick") that are factually true of the exact
