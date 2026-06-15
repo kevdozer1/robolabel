@@ -113,6 +113,16 @@ class Rubric:
             phase_vocabulary=", ".join(self.phase_vocabulary),
         )
 
+    def grounded_label_prompt_open(self, *, task: str, last_frame: int, observations: str,
+                                   frame_manifest: str) -> str:
+        """Open-vocabulary grounded label prompt (S2-open): free-text phase names."""
+        return _fill(
+            self._strategies["grounded_label_prompt_open"],
+            task=task, last_frame=last_frame, observations=observations,
+            frame_manifest=frame_manifest,
+            min_segments=self.strategy_min_segments, max_segments=self.strategy_max_segments,
+        )
+
     def refine_prompt(self, *, task: str, phase_before: str, phase_after: str,
                       boundary_evidence: str, frame_manifest: str) -> str:
         return _fill(

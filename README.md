@@ -105,6 +105,26 @@ the baseline). Full writeup: [`STRATEGY_REPORT.md`](STRATEGY_REPORT.md).
 
 Every claim above is itemized with its evidence and status in [`CLAIMS.md`](CLAIMS.md).
 
+## What these annotations are for (and what they are not)
+
+robolabel's outputs target **VLA-style subtask conditioning and dataset curation** — not
+world-model training. Being explicit about that scope is deliberate: it points the tool at
+the use where the evidence actually supports it.
+
+- **Subtask boundaries + `phase → target` labels** → per-segment conditioning signals for
+  SARM/VLA-style policies, and a curation lens for spotting the bad episodes. *This is the
+  primary target.*
+- **Episode quality (1–5)** → dataset curation: keep / re-check / drop an episode before it
+  reaches a trainer.
+- **Subgoal keyframes** → the one output with cross-paradigm reach: goal-conditioned
+  planning / goal-image BC, independent of the conditioning stack.
+
+They are **not** world-model training inputs. The one preregistered, controlled test of
+using a conditioning signal like this to train a JEPA-style world model came back
+**negative** — the apparent win was a latent-variance artifact that vanished under
+normalization ([`docs/why.md`](docs/why.md)). Scoping the tool to conditioning + curation,
+rather than implying a world-model win we did not measure, is a credibility feature.
+
 ## When to use it / when not
 
 **Use it when** you have a LeRobot dataset, want VLM-drafted subtask/quality annotations,

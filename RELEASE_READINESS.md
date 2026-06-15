@@ -47,7 +47,8 @@ smoke-tested, what is missing, and what to fix first.
   cumulative grounding → closed phase vocabulary + min granularity → dense-window
   boundary refinement → self-consistency. Off by default (S0 baseline is
   bit-for-bit reproducible); resolved config recorded in `strategy.json`; schema
-  bumped to v2 (adds `phase`, `boundary_evidence`, `strategy`; v1 still reads).
+  bumped to v2 (adds `phase`, `boundary_evidence`, `strategy`) then **v3** (adds the
+  grounded `target` slot, `phase → target`); v1/v2 still read.
   Schema validation, detectors, strategy configs, and S0–S4 segmentation are
   tested offline with the mock provider; the grounded prompts live in
   `rubric.yaml`. **Exercised live at ablation scale** — see below.
@@ -70,6 +71,8 @@ smoke-tested, what is missing, and what to fix first.
 - **Quality bar.** `ruff` clean; 80 tests pass on Python 3.10; CI matrix 3.10/3.12. The
   `robolabel` wheel builds and installs clean in a fresh venv (`robolabel` CLI + offline
   demo verified from the built wheel). Tagged **v0.1.0** on `main` (local; not pushed).
+  (Current suite: **105 tests** after the schema-v3 structured-label work and the open-vocab
+  variant; see CHANGELOG.)
 
 ## Fixed / found during the live run
 

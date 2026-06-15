@@ -43,3 +43,10 @@ eval_metrics/
 inspect_data/
 fresh_*/
 grades*.json
+
+# spot-check montages (regenerable via scripts/spotcheck_frames.py)
+spotcheck/
+# cross-task probe working dir (regenerable; receipts + frames, embeds no gold)
+probe_*/
+# run logs (regenerable)
+*.log

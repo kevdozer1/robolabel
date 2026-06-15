@@ -9,8 +9,9 @@ the drafted issue replies) mapped to the artifact that supports it and a status:
 - **mechanical-only** — the code runs / a format check passes, but it is not evidence of
   usefulness.
 - **untested** — not demonstrated. Stated as such; never implied otherwise.
-- **fixed-and-spot-checked-pending** — a code/format change is verified by tests and a live
-  re-annotation, but the *quality* of the result still awaits the author's spot-check.
+- **fixed-and-spot-checked** — a code/format change is verified by tests and a live
+  re-annotation, and a frame-level spot-check confirms the result; any residual is named in
+  the row. The author's full blind re-grade, where noted, remains the gold-standard check.
 
 The README may only assert **verified** and **verified-on-one-dataset (with the caveat)**
 rows. Everything else is described as not-yet-shown.
@@ -31,7 +32,9 @@ rows. Everything else is described as not-yet-shown.
 | 12 | Evidence strings are factually true of their cited frame ("evidence factual-accuracy") | the `inspect` evidence tab + blind trial → `FRESH_TRIAL_REPORT.md` | **untested until the blind trial is graded** |
 | 13 | The findings generalize to a dataset with no S0-anchored gold | fresh stacking set: failure-band rate computable now (objective); boundary/phase/evidence acceptance via the blind trial | **untested until the blind trial is graded** (objective failure-band: see fresh report) |
 | 14 | These conditioning annotations improve downstream training | `docs/why.md` — preregistered head-to-head; not shown, and on one careful test, no | **untested (explicitly; on one test, negative)** |
-| 15 | Grounded labels name the specific target object (`phase → target`), so disambiguation is possible when several similar objects are present (the "which cube?" gap that blind grading surfaced) | schema v3 `target` column + validation tests (`test_require_target_*`, `test_terminal_phase_dedupe_*`); re-annotated fresh set `fresh_stacking/grounded_flash_v3` | **fixed-and-spot-checked-pending** |
+| 15 | Grounded labels name the specific target object (`phase → target`), so disambiguation is possible when several similar objects are present (the "which cube?" gap that blind grading surfaced). Residual: the target *naming rule* on transport/place is not yet uniform (moved-object vs destination) | schema v3 `target` column + validation tests (`test_require_target_*`, `test_terminal_phase_dedupe_*`); re-annotated fresh set `fresh_stacking/grounded_flash_v3`; frame-level spot-check (8/20 eps, 36 segs, `scripts/spotcheck_frames.py`): phases correct, targets present | **fixed-and-spot-checked** (target-naming convention → v0.2; author blind re-grade is the gold-standard check) |
+
+| 16 | Frame-grounding still eliminates the degenerate/uniform failure bands on tasks **outside** pick-and-place (pour, cloth-fold: **0/8** each, both vocab conditions), while the closed pick-and-place phase vocabulary degrades off-task (pour: **17.5%** of segments coerced to `other`; fold: silently mislabeled as `release-place`) where the open-vocab `S2-open` reads sensibly (`pour water`, `perform fold`; 0% `other`) | `FRESH_TRIAL_REPORT.md` → "Cross-task generalization probe"; `probe_metrics.json`; `scripts/run_probe.py` + `probe_metrics.py` | **verified gold-free on 2 new task families** (8 eps each; objective band/vocab metrics + a 10-boundary author spot-check; caveat: pour=sim, fold=real-but-bimanual/one-camera; no human gold) |
 
 ## Caveats that must travel with the "verified-on-one-dataset" rows
 

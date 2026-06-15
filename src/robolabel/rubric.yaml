@@ -141,6 +141,38 @@ strategies:
     segment. Do not place boundaries at uniform fractions of the duration.
     Return ONLY valid JSON:
     {"segments":[{"phase":"approach","target":"red cube","end_frame":40,"evidence":"gripper above the red cube","subtask_text":"move to the red cube"}]}
+  # Open-vocabulary grounded label (S2-open): same grounding + target + min granularity, but
+  # the phase is named in FREE TEXT to fit whatever the task actually is (pour, fold, wipe).
+  grounded_label_prompt_open: |
+    Segment this robot manipulation episode into {min_segments} to {max_segments}
+    temporally-ordered subtasks. A normal episode has at least {min_segments} distinct
+    phases, NOT a single "complete the task" segment.
+    Task: {task}
+    The contact sheet frames are captioned with their exact frame index and
+    timestamp:
+    {frame_manifest}
+    Stage-one physical events:
+    {observations}
+    For each subtask return:
+      - "phase": a SHORT free-text name for what the arm is doing in this phase, chosen to
+        fit THIS task — 1 to 3 words, verb-led (e.g. "approach cup", "tilt to pour",
+        "grasp corner", "fold flap", "wipe surface", "retract"). Do NOT force the action into
+        a fixed list; name what you actually see.
+      - "target": the SPECIFIC object or destination this subtask acts on, named from the
+        scene — e.g. "cup", "the bowl", "left sleeve", "near corner". When several similar
+        objects are present you MUST disambiguate which one. Required for every phase EXCEPT a
+        final withdraw/retract phase with no object, where "none" is allowed.
+      - "end_frame": the integer frame index (from the captions above) where this
+        subtask ends and the next begins — choose the frame where the transition
+        is actually visible, not an even division of the episode
+      - "evidence": one short clause naming the visible event at that boundary
+        (e.g. "liquid starts leaving the cup", "cloth edge meets the opposite edge")
+      - "subtask_text": a short action phrase naming the object/destination
+    Boundaries must be strictly increasing frame indices, contiguous, and cover
+    the whole episode (frames 0 through {last_frame}). Do not return a single
+    segment. Do not place boundaries at uniform fractions of the duration.
+    Return ONLY valid JSON:
+    {"segments":[{"phase":"tilt to pour","target":"the cup","end_frame":40,"evidence":"liquid starts leaving the cup","subtask_text":"pour from the cup"}]}
   # Dense-window refinement (S3): pin one boundary to its exact transition frame.
   refine_prompt: |
     Find the EXACT frame where one subtask transition happens in a robot

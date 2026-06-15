@@ -159,7 +159,9 @@ def _grounded_label(
     temperature: float | None,
     num_samples: int,
 ) -> tuple[list[SubtaskSegment], list[ProviderResponse]]:
-    base_q = rubric.grounded_label_prompt(
+    prompt_fn = (rubric.grounded_label_prompt_open if config.open_vocabulary
+                 else rubric.grounded_label_prompt)
+    base_q = prompt_fn(
         task=task, last_frame=last_frame, observations=observations, frame_manifest=manifest
     )
     calls: list[ProviderResponse] = []
@@ -236,7 +238,7 @@ def validate_grounded_segments(
         if config.closed_vocabulary and phase not in vocab:
             phase = "other"
         target = _clean_target(item.get("target"))
-        if config.require_target and target is None and phase != "retract":
+        if config.require_target and target is None and not _target_optional(phase, config):
             raise SchemaValidationError(f"segment ({phase or 'phase'}) missing a target object")
         text = str(item.get("subtask_text") or item.get("text") or item.get("description") or "").strip()
         if not text:
@@ -267,12 +269,28 @@ def validate_grounded_segments(
 
 
 _TARGET_NONE = {"", "none", "n/a", "na", "-", "null", "the scene", "scene", "object"}
+_RETRACT_LIKE = ("retract", "withdraw", "retreat", "return", "go home", "home", "reset", "back away")
 
 
 def _clean_target(value: object) -> str | None:
     """Normalize a target string; '', 'none', 'n/a', etc. -> None."""
     s = str(value or "").strip()
     return s[:80] if s and s.lower() not in _TARGET_NONE else None
+
+
+def _target_optional(phase: str, config: StrategyConfig) -> bool:
+    """Phases for which a missing target is allowed under require_target.
+
+    Closed-vocab (S2/S3/S4): only the exact phase ``retract``. Open-vocab (S2-open):
+    also any free-text phase that reads like a final withdraw (``withdraw``, ``go home``,
+    ...), since those have no object. Leaves the closed-vocab path byte-identical.
+    """
+    if phase == "retract":
+        return True
+    if config.open_vocabulary:
+        p = phase.lower()
+        return any(tok in p for tok in _RETRACT_LIKE)
+    return False
 
 
 def _dedupe_trailing_phases(segs: list[SubtaskSegment]) -> list[SubtaskSegment]:

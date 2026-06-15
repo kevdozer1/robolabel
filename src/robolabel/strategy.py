@@ -55,6 +55,12 @@ class StrategyConfig:
     # Empty target is rejected and re-prompted (except `retract`, where "none" is allowed).
     # Off when reconstructing pre-v3 cached receipts (which carry no target).
     require_target: bool = False
+    # v0.2: open-vocabulary grounded variant. Same grounding + target + min-granularity as
+    # S2, but the closed phase vocabulary is OFF — the model names each phase in free text
+    # ("tilt cup to pour", "grasp corner"). Selects the open label prompt and relaxes the
+    # target-optional exemption to retract-like phase names. The closed-vocab S2 default is
+    # untouched (this flag defaults off everywhere except the S2-open preset).
+    open_vocabulary: bool = False
     max_label_attempts: int = 1       # re-prompts when grounded validation fails
     # post-passes
     refine_boundaries: bool = False   # S3+: dense-window per-boundary refinement
@@ -126,6 +132,21 @@ PRESETS: dict[str, StrategyConfig] = {
         self_consistency_k=3,
         temperature=0.4,
     ),
+    # v0.2 cross-task variant (NOT in the frozen S0..S4 ablation). Identical to S2 except the
+    # closed phase vocabulary is replaced by free-text phase names — for tasks outside the
+    # hand-authored pick-and-place vocabulary (pour, fold, wipe, ...).
+    "S2-open": StrategyConfig(
+        name="S2-open",
+        description="S2 with OPEN vocabulary: grounding + target + min granularity, free-text phases",
+        frame_count=12,
+        caption_timestamps=True,
+        grounded=True,
+        closed_vocabulary=False,
+        open_vocabulary=True,
+        enforce_min_segments=True,
+        require_target=True,
+        max_label_attempts=3,
+    ),
 }
 
 DEFAULT_STRATEGY = "S0"
@@ -147,8 +168,9 @@ def load_strategy(name_or_path: str | StrategyConfig | None = None) -> StrategyC
     if isinstance(name_or_path, StrategyConfig):
         return name_or_path
     key = str(name_or_path).strip()
-    if key.upper() in PRESETS:
-        return PRESETS[key.upper()]
+    for pname, preset in PRESETS.items():  # case-insensitive (e.g. "s2-open" -> "S2-open")
+        if pname.upper() == key.upper():
+            return preset
     path = Path(key)
     if path.exists():
         return _from_dict(json.loads(path.read_text(encoding="utf-8")))
@@ -158,7 +180,8 @@ def load_strategy(name_or_path: str | StrategyConfig | None = None) -> StrategyC
 
 
 def _from_dict(data: dict[str, Any]) -> StrategyConfig:
-    base = PRESETS.get(str(data.get("base", "")).upper(), PRESETS[DEFAULT_STRATEGY])
+    base_key = str(data.get("base", "")).upper()
+    base = next((p for k, p in PRESETS.items() if k.upper() == base_key), PRESETS[DEFAULT_STRATEGY])
     fields = {f for f in StrategyConfig.__dataclass_fields__}  # noqa: C416
     overrides = {k: v for k, v in data.items() if k in fields}
     overrides.setdefault("name", data.get("name", base.name))

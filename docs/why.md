@@ -44,3 +44,18 @@ inverse-dynamics probe, and trivial-baseline diagnostics live in the author's
 research repository's technical report. This page is the public summary; the claim
 robolabel makes is "labels + measurement + a fixing loop," not "labels that improve
 training."
+
+## So what *are* they for?
+
+The negative result above is specifically about **world-model training inputs**. It does
+not condemn the annotations — it scopes them. What they target:
+
+- **VLA-style subtask conditioning** — per-segment `phase → target` labels as a conditioning
+  signal for SARM/VLA policies (still measure it yourself, per point 2 above).
+- **Dataset curation** — the 1–5 quality score and the gate flags, to keep / re-check / drop
+  episodes before training.
+- **Goal-conditioned planning** — the subgoal keyframes are the one output that crosses
+  paradigms cleanly (goal-image BC / planning), independent of any conditioning stack.
+
+Stating where the evidence points — conditioning and curation, not world-modeling — is the
+point of this page. See the README's "What these annotations are for" for the short version.

@@ -75,6 +75,7 @@ def test_strategy_provenance_roundtrips():
 _RUBRIC = load_rubric()
 _S1 = PRESETS["S1"]
 _S2 = PRESETS["S2"]
+_S2O = PRESETS["S2-open"]
 
 
 def test_validate_grounded_good_case():
@@ -189,6 +190,66 @@ def _clean_str(v) -> str:
         return ""
     s = str(v).strip()
     return "" if s.lower() in ("", "nan", "none") else s
+
+
+# --------------------------------------------------------------------------- #
+# Open-vocabulary grounded variant (S2-open, v0.2)
+# --------------------------------------------------------------------------- #
+def test_s2_open_preset_is_grounded_open_vocab():
+    assert _S2O.grounded and _S2O.require_target and _S2O.enforce_min_segments
+    assert _S2O.open_vocabulary is True
+    assert _S2O.closed_vocabulary is False            # the whole point: vocab is OFF
+    # the frozen closed-vocab S2 is untouched
+    assert _S2.closed_vocabulary is True and _S2.open_vocabulary is False
+
+
+def test_load_strategy_s2_open_case_insensitive():
+    assert load_strategy("S2-open").name == "S2-open"
+    assert load_strategy("s2-open").name == "S2-open"   # CLI may pass lowercase
+
+
+def test_open_vocab_preserves_free_text_phase():
+    # closed_vocabulary OFF: a free-text phase is kept verbatim, NOT coerced to "other".
+    raw = {"segments": [
+        {"phase": "tilt cup to pour", "target": "the cup", "end_frame": 10, "evidence": "liquid leaves cup", "subtask_text": "pour"},
+        {"phase": "lift away", "target": "the cup", "end_frame": 20, "evidence": "cup rises", "subtask_text": "lift"},
+        {"phase": "return", "end_frame": 30, "evidence": "arm withdraws", "subtask_text": "withdraw"},
+    ]}
+    segs = validate_grounded_segments(raw, 31, _S2O, _RUBRIC)
+    assert [s.phase for s in segs] == ["tilt cup to pour", "lift away", "return"]
+
+
+def test_open_vocab_allows_none_target_for_withdraw_like_phase():
+    # 'return' / 'withdraw'-like free-text phases may omit the target (no object).
+    raw = {"segments": [
+        {"phase": "grasp corner", "target": "near corner", "end_frame": 10, "evidence": "fingers on cloth", "subtask_text": "grasp"},
+        {"phase": "fold over", "target": "the towel", "end_frame": 20, "evidence": "edge meets edge", "subtask_text": "fold"},
+        {"phase": "withdraw", "end_frame": 30, "evidence": "arm retreats", "subtask_text": "retract"},
+    ]}
+    segs = validate_grounded_segments(raw, 31, _S2O, _RUBRIC)
+    assert segs[-1].phase == "withdraw" and segs[-1].target is None
+
+
+def test_open_vocab_still_rejects_empty_target_on_action_phase():
+    raw = {"segments": [
+        {"phase": "tilt to pour", "target": "", "end_frame": 10, "evidence": "e", "subtask_text": "x"},
+        {"phase": "grasp corner", "target": "near corner", "end_frame": 20, "evidence": "e", "subtask_text": "y"},
+        {"phase": "fold flap", "target": "the cloth", "end_frame": 30, "evidence": "e", "subtask_text": "z"},
+    ]}
+    with pytest.raises(SchemaValidationError, match="target"):
+        validate_grounded_segments(raw, 31, _S2O, _RUBRIC)
+
+
+def test_open_vocab_offline_segmentation_with_mock(tmp_path: Path):
+    # S2-open runs the offline pipeline end to end: contiguous full coverage, grounded.
+    rubric = load_rubric()
+    provider = build_provider("mock")
+    ep = synthetic_episode(0)
+    res = segment_episode(ep, provider, rubric, load_strategy("S2-open"), tmp_path)
+    segs = res.segments
+    assert segs[0].start_frame == 0 and segs[-1].end_frame == ep.num_frames - 1
+    assert all(s.evidence for s in segs)
+    assert len(segs) >= rubric.strategy_min_segments
 
 
 # --------------------------------------------------------------------------- #

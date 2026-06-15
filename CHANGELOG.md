@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.0 (unreleased) — cross-task generalization + open vocabulary
+
+- **Open-vocabulary grounded variant (`S2-open`).** A first-class strategy that keeps S2's
+  frame-grounding + per-boundary evidence + required `target`, but turns the closed phase
+  vocabulary OFF so the model names each phase in free text ("tilt to pour", "grasp corner").
+  The closed-vocab S2 default is untouched (a dedicated `open_vocabulary` flag selects the open
+  label prompt and relaxes the target-optional exemption to retract/withdraw-like phases). 6
+  new tests; `--strategy S2-open`.
+- **Cross-task generalization probe (pour + cloth-fold).** A gold-free check of whether
+  frame-grounding still eliminates the degenerate/uniform failure bands *outside*
+  pick-and-place, and whether the hand-authored pick-place phase vocabulary degrades where the
+  grounding does not. Datasets, exact numbers, and the finding: `FRESH_TRIAL_REPORT.md` →
+  "Cross-task generalization probe", `CLAIMS.md`, `ROADMAP.md`. Helper scripts:
+  `scripts/discover_datasets.py`, `scripts/run_probe.py`, `scripts/probe_metrics.py`.
+- **VLA-vs-world-model scoping.** README + `docs/why.md` now state plainly that these
+  annotations target VLA subtask conditioning + dataset curation, **not** world-model training
+  (the one careful test of that was negative) — with subgoal keyframes the one cross-paradigm
+  output.
+
 ## 0.1.0 (unreleased)
 
 First public release. Highlights:
