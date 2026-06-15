@@ -40,9 +40,15 @@ from PIL import Image
 class InspectSession:
     """Holds the inspect payload, the frame source, and (blind mode) the grades file."""
 
-    def __init__(self, data_path: str | Path, source=None, grades_path: str | Path | None = None):
-        self.data = json.loads(Path(data_path).read_text(encoding="utf-8"))
-        self.episodes: dict[str, Any] = {ep.episode_id: ep for ep in source} if source is not None else {}
+    def __init__(self, data_path: str | Path | dict, source=None, grades_path: str | Path | None = None,
+                 episodes_map: dict | None = None):
+        # data_path may be a path or an already-loaded payload dict (gallery mode).
+        self.data = data_path if isinstance(data_path, dict) else json.loads(
+            Path(data_path).read_text(encoding="utf-8"))
+        if episodes_map is not None:                       # gallery: frames pre-routed by prefixed id
+            self.episodes: dict[str, Any] = episodes_map
+        else:
+            self.episodes = {ep.episode_id: ep for ep in source} if source is not None else {}
         self.grades_path = Path(grades_path) if grades_path else None
         self._frame_cache: OrderedDict[tuple[str, int], bytes] = OrderedDict()
         self._cache_cap = 1000
@@ -56,6 +62,7 @@ class InspectSession:
         for e in self.data["episodes"]:
             eps.append({
                 "episode_id": e["episode_id"], "task": e.get("task", ""),
+                "gallery_task": e.get("gallery_task", ""),
                 "sort_iou": e.get("sort_iou", 1.0), "n_flags": e.get("n_flags", 0),
                 "graded": self._is_graded(e["episode_id"]),
             })
@@ -65,6 +72,7 @@ class InspectSession:
             "track_order": self.data["track_order"],
             "track_colors": self.data["track_colors"],
             "blind": self.data.get("blind", False),
+            "gallery": self.data.get("gallery", False),
             "has_frames": bool(self.episodes),
             "episodes": eps,
             "graded_count": sum(1 for e in eps if e["graded"]),
@@ -211,7 +219,8 @@ def serve(session: InspectSession, host: str = "127.0.0.1", port: int = 8799, op
     port = _free_port(port)
     server = ThreadingHTTPServer((host, port), make_handler(session))
     url = f"http://{host}:{port}"
-    mode = "BLIND TRIAL" if session.data.get("blind") else "review"
+    mode = ("BLIND TRIAL" if session.data.get("blind")
+            else "gallery" if session.data.get("gallery") else "review")
     print(f"robolabel inspect ({mode}): {url}")
     if not session.episodes:
         print("note: no --source given, so frames are not shown. Pass --source/--target to scrub clips.")
@@ -263,6 +272,74 @@ def build_session(data: str, source_kind: str | None, target: str | None,
     return InspectSession(data, source=source, grades_path=grades)
 
 
+GALLERY_SEP = "::"  # episode-id prefix delimiter (survives encodeURIComponent in the SPA)
+
+
+def merge_gallery_payloads(items: list[dict]) -> tuple[dict, dict]:
+    """Merge per-task inspect payloads into one gallery payload + a routed episodes map.
+
+    Each item: ``{"task": str, "payload": dict, "episodes": {orig_id: Episode}}``. Episode
+    ids are prefixed ``task::id`` so the queue groups by task and frames route to the right
+    per-task source. Pure (no I/O) so it is unit-testable without a network. Returns
+    ``(combined_payload, episodes_map)``.
+    """
+    episodes: list[dict] = []
+    track_order: list[str] = []
+    track_colors: dict[str, str] = {}
+    episodes_map: dict[str, Any] = {}
+    for it in items:
+        task = it["task"]
+        payload = it["payload"]
+        src_eps = it.get("episodes") or {}
+        for name in payload.get("track_order", []):
+            if name not in track_order:
+                track_order.append(name)
+        track_colors.update(payload.get("track_colors", {}))
+        for ep in payload.get("episodes", []):
+            orig = str(ep.get("episode_id"))
+            pid = f"{task}{GALLERY_SEP}{orig}"
+            ep = dict(ep)
+            ep["episode_id"] = pid
+            ep["frame_ep"] = pid
+            ep["gallery_task"] = task
+            episodes.append(ep)
+            if orig in src_eps:
+                episodes_map[pid] = src_eps[orig]
+    combined = {
+        "dataset": "gallery", "source_kind": "lerobot",
+        "track_order": track_order, "track_colors": track_colors,
+        "blind": False, "gallery": True, "episodes": episodes,
+    }
+    return combined, episodes_map
+
+
+def build_gallery_session(specs: list[dict], grades: str | None = None) -> InspectSession:
+    """Build a multi-task gallery session from task specs.
+
+    Each spec: ``{task, data, source?, target?, camera_key?, episodes?}``; ``data`` is a path
+    to an ``inspect_data.json``. Each task's frame source is built separately (with its own
+    episode range) so frames route correctly; a task with no ``target`` shows its timelines
+    but no frames.
+    """
+    from .adapters import build_source
+    items = []
+    for spec in specs:
+        payload = json.loads(Path(spec["data"]).read_text(encoding="utf-8"))
+        src_eps: dict = {}
+        if spec.get("source") and spec.get("target"):
+            kwargs: dict = {}
+            if spec["source"] == "lerobot" and spec.get("camera_key"):
+                kwargs["camera_key"] = spec["camera_key"]
+            eps = parse_episodes(spec.get("episodes"))
+            if eps is not None:
+                kwargs["episodes"] = eps
+            source = build_source(spec["source"], spec["target"], **kwargs)
+            src_eps = {ep.episode_id: ep for ep in source}
+        items.append({"task": spec["task"], "payload": payload, "episodes": src_eps})
+    combined, episodes_map = merge_gallery_payloads(items)
+    return InspectSession(combined, episodes_map=episodes_map, grades_path=grades)
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="robolabel inspect — verification viewer.")
     p.add_argument("--data", required=True, help="inspect_data.json from build_inspect_data.py")
@@ -297,6 +374,7 @@ select,input[type=text]{border:1px solid var(--line);border-radius:6px;padding:5
 .qlist{overflow-y:auto;padding:6px}.qi{width:100%;text-align:left;border:1px solid transparent;background:transparent;padding:7px;border-radius:6px;cursor:pointer;color:var(--ink)}
 .qi:hover{background:#f1f5f9}.qi.active{border-color:var(--blue);background:#eff6ff}.qid{font-size:12px;font-weight:700}
 .qsub{font-size:11px;color:var(--muted);margin-top:2px}.flag{color:var(--red)}
+.qgroup{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:9px 7px 3px;border-top:1px solid var(--line);margin-top:4px}
 .viewer{display:flex;flex-direction:column}.vtitle{padding:10px 12px 0}.vtitle h2{margin:0 0 2px;font-size:16px}.vtitle p{margin:0;color:var(--muted);font-size:12px}
 .stage{padding:10px 12px;display:flex;flex-direction:column;align-items:center}
 #frame{width:100%;max-height:46vh;object-fit:contain;background:#0b1220;border-radius:6px}
@@ -353,18 +431,24 @@ button.primary{background:var(--blue);color:#fff;border:0;padding:10px;border-ra
 let S=null,E=null,cur=null,frame=0,playing=false,timer=null,TAB='metrics';
 async function j(u,o={}){const r=await fetch(u,o);const d=await r.json();if(!r.ok||d.error)throw new Error(d.error||r.status);return d;}
 async function init(){S=await j('/api/state');document.getElementById('meta').innerHTML=
-  `<span>${esc(S.dataset)}</span><span>${S.episodes.length} episodes</span>${S.blind?'<span class="badge">BLIND TRIAL '+S.graded_count+'/'+S.episodes.length+' graded</span>':''}`;
+  `<span>${esc(S.gallery?'gallery':S.dataset)}</span><span>${S.episodes.length} episodes</span>${S.gallery?'<span class="badge">'+galleryTaskCount()+' tasks</span>':''}${S.blind?'<span class="badge">BLIND TRIAL '+S.graded_count+'/'+S.episodes.length+' graded</span>':''}`;
  if(S.blind)document.getElementById('gradeTab').style.display='';
  renderQueue();cur=queueOrder()[0];if(cur)await load(cur);}
+function galleryTaskCount(){return new Set(S.episodes.map(e=>e.gallery_task)).size;}
 function queueOrder(){let q=[...S.episodes];const flt=document.getElementById('filter').value;
  if(flt==='flagged')q=q.filter(e=>e.n_flags>0);if(flt==='ungraded')q=q.filter(e=>!e.graded);
  const s=document.getElementById('sort').value;
- if(s==='iou')q.sort((a,b)=>a.sort_iou-b.sort_iou);else if(s==='flags')q.sort((a,b)=>b.n_flags-a.n_flags);else q.sort((a,b)=>(''+a.episode_id).localeCompare(''+b.episode_id,undefined,{numeric:true}));
+ const within=(a,b)=>s==='iou'?a.sort_iou-b.sort_iou:s==='flags'?b.n_flags-a.n_flags:(''+a.episode_id).localeCompare(''+b.episode_id,undefined,{numeric:true});
+ // gallery: keep episodes grouped by task, then sort within each task by the chosen key
+ q.sort((a,b)=>S.gallery?((''+a.gallery_task).localeCompare(''+b.gallery_task)||within(a,b)):within(a,b));
  return q.map(e=>e.episode_id);}
 function renderQueue(){const order=queueOrder();const root=document.getElementById('queue');root.innerHTML='';
- const byId=Object.fromEntries(S.episodes.map(e=>[e.episode_id,e]));
- for(const id of order){const e=byId[id];const b=document.createElement('button');b.className=`qi ${id===cur?'active':''}`;b.onclick=()=>load(id);
-  b.innerHTML=`<div class="qid">${e.graded?'✓ ':''}ep ${esc(id)}</div><div class="qsub">${S.blind?'':'min IoU '+e.sort_iou.toFixed(2)+' · '}${e.n_flags?'<span class="flag">'+e.n_flags+' flags</span>':'no flags'}</div>`;
+ const byId=Object.fromEntries(S.episodes.map(e=>[e.episode_id,e]));let lastTask=null;
+ for(const id of order){const e=byId[id];
+  if(S.gallery&&e.gallery_task!==lastTask){lastTask=e.gallery_task;const h=document.createElement('div');h.className='qgroup';h.textContent=e.gallery_task;root.appendChild(h);}
+  const b=document.createElement('button');b.className=`qi ${id===cur?'active':''}`;b.onclick=()=>load(id);
+  const shortId=S.gallery?(''+id).split('::').pop():id;
+  b.innerHTML=`<div class="qid">${e.graded?'✓ ':''}ep ${esc(shortId)}</div><div class="qsub">${S.blind?'':'min IoU '+e.sort_iou.toFixed(2)+' · '}${e.n_flags?'<span class="flag">'+e.n_flags+' flags</span>':'no flags'}</div>`;
   root.appendChild(b);}}
 async function load(id){stop();cur=id;E=await j('/api/episode/'+encodeURIComponent(id));renderQueue();
  document.getElementById('epid').textContent='Episode '+E.episode_id;document.getElementById('task').textContent=E.task||'';
@@ -398,7 +482,7 @@ function highlight(){/* segment hover handled by title; playhead line shows posi
 function tab(t){TAB=t;for(const el of document.querySelectorAll('.tab'))el.classList.toggle('on',el.dataset.tab===t);renderPanel();}
 function renderPanel(){const p=document.getElementById('panel');if(TAB==='metrics')p.innerHTML=metricsHTML();
  else if(TAB==='evidence')renderEvidence(p);else renderGrade(p);}
-function metricsHTML(){let q=E.quality||{};let rows='';for(const name of S.track_order){if(name==='gold')continue;const m=(E.metrics||{})[name]||{};
+function metricsHTML(){let q=E.quality||{};let rows='';for(const name of S.track_order){if(name==='gold'||!E.tracks[name])continue;const m=(E.metrics||{})[name]||{};
   rows+=`<tr><td style="color:${S.track_colors[name]}">${esc(S.blind?'model':name)}</td><td class="num">${fmt(m.iou)}</td><td class="num">${fmt(m.boundary_precision)}</td><td class="num">${fmt(m.boundary_recall)}</td><td class="num">${m.mae==null?'–':m.mae.toFixed(1)}</td><td class="num">${m.n_segments}</td></tr>`;}
  const flags=(E.gate_flags||[]).map(f=>`<span class="flag">${esc(f)}</span>`).join(' · ')||'<span class="muted">none</span>';
  const ql=`auto ${q.auto??'–'} / gold ${q.gold??'–'}`;const cost=q.cost!=null?('$'+Number(q.cost).toFixed(4)):'–';

@@ -22,6 +22,26 @@ def test_parse_episodes():
     assert parse_episodes("0-2,5") == [0, 1, 2, 5]
 
 
+def test_merge_gallery_payloads():
+    from robolabel.inspect_server import merge_gallery_payloads
+    pa = {"track_order": ["grounded"], "track_colors": {"grounded": "#2563eb"},
+          "episodes": [{"episode_id": "0", "task": "pour water", "num_frames": 10,
+                        "tracks": {"grounded": {"segments": []}}}]}
+    pb = {"track_order": ["gold", "grounded"], "track_colors": {"gold": "#111", "grounded": "#2563eb"},
+          "episodes": [{"episode_id": "0", "num_frames": 5, "tracks": {}}]}
+    dummy = object()
+    combined, emap = merge_gallery_payloads([
+        {"task": "pour", "payload": pa, "episodes": {"0": dummy}},
+        {"task": "fold", "payload": pb, "episodes": {}},
+    ])
+    assert combined["gallery"] is True
+    assert [e["episode_id"] for e in combined["episodes"]] == ["pour::0", "fold::0"]
+    assert [e["gallery_task"] for e in combined["episodes"]] == ["pour", "fold"]
+    assert combined["episodes"][0]["frame_ep"] == "pour::0"
+    assert combined["track_order"] == ["grounded", "gold"]   # union, first-seen order
+    assert emap["pour::0"] is dummy                            # frames route by prefixed id
+
+
 def _tracks():
     gold = [{"start": 0, "end": 10}, {"start": 11, "end": 20}, {"start": 21, "end": 30}]
     good = [{"start": 0, "end": 10, "phase": "approach", "text": "x", "evidence": "gripper above"},

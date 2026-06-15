@@ -50,3 +50,5 @@ spotcheck/
 probe_*/
 # run logs (regenerable)
 *.log
+# gallery config (regenerable via scripts/make_gallery.py; references local inspect_data)
+gallery.json

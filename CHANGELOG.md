@@ -2,6 +2,13 @@
 
 ## 0.2.0 (unreleased) — cross-task generalization + open vocabulary
 
+- **`robolabel gallery`** — load several task datasets into one task-grouped view (the
+  grounded lane shown per task), so you can eyeball grounded across pick-place / stacking /
+  pour / fold in one browsable page. Multi-source frame routing (each task keeps its own
+  dataset + camera + episode range); dependency-free and offline like `inspect`.
+  `scripts/make_gallery.py` writes the config (`robolabel gallery --config gallery.json`).
+  Also adds **`inspect --episodes 0-7`** to load only the annotated episode range instead of
+  the whole dataset.
 - **Open-vocabulary grounded variant (`S2-open`).** A first-class strategy that keeps S2's
   frame-grounding + per-boundary evidence + required `target`, but turns the closed phase
   vocabulary OFF so the model names each phase in free text ("tilt to pour", "grasp corner").

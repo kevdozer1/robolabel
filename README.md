@@ -28,6 +28,11 @@ the model's stated reason is true:
 > --target lerobot/svla_so101_pickplace --camera-key observation.images.side`
 > (screenshot placeholder — see `REVIEW_GUIDE.md`).
 
+**The gallery** (`robolabel gallery`) loads several task datasets into one task-grouped view —
+the grounded lane shown per task — so you can eyeball grounded across pick-place, stacking,
+pour, and fold in one page (`python scripts/make_gallery.py && robolabel gallery --config
+gallery.json`).
+
 **The query path** (`robolabel query`) proves the labels are usable — e.g. *show me every
 grasp across the dataset* as a contact sheet:
 

@@ -58,6 +58,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--port", type=int, default=8799)
     p.add_argument("--no-browser", action="store_true")
 
+    p = sub.add_parser("gallery",
+                       help="Multi-task gallery: several inspect_data sets in one view, grouped by task.")
+    p.add_argument("--config", default=None,
+                   help="JSON file: a list of task specs "
+                        '[{"task","data","source","target","camera_key","episodes"}, ...].')
+    p.add_argument("--task", action="append", default=[], metavar="SPEC",
+                   help='Repeatable pipe-spec: "name|data.json|source|target|camera_key|episodes" '
+                        '(e.g. "pour|inspect_data/pour.json|lerobot|Ishah8840/so101_pouring|'
+                        'observation.images.front|0-7"). Use --config for many tasks.')
+    p.add_argument("--port", type=int, default=8799)
+    p.add_argument("--no-browser", action="store_true")
+
     p = sub.add_parser("query", help="Retrieve segments by phase -> contact sheet; or needs_review episodes.")
     p.add_argument("--annotations", required=True)
     p.add_argument("--phase", default=None, help="Retrieve every segment with this phase (e.g. grasp).")
@@ -212,6 +224,34 @@ def _inspect(args) -> int:
     return 0
 
 
+def _parse_task_spec(spec: str) -> dict:
+    """Parse "name|data|source|target|camera_key|episodes" into a task-spec dict."""
+    f = [p.strip() or None for p in spec.split("|")]
+    f += [None] * (6 - len(f))
+    return {"task": f[0], "data": f[1], "source": f[2], "target": f[3],
+            "camera_key": f[4], "episodes": f[5]}
+
+
+def _gallery(args) -> int:
+    import json as _json
+
+    from .inspect_server import build_gallery_session, serve
+    specs: list[dict] = []
+    if args.config:
+        specs.extend(_json.loads(Path(args.config).read_text(encoding="utf-8")))
+    specs.extend(_parse_task_spec(s) for s in args.task)
+    if not specs:
+        print("gallery: pass --config <json> or one or more --task specs. See `robolabel gallery -h`.")
+        return 2
+    missing = [s for s in specs if not s.get("task") or not s.get("data")]
+    if missing:
+        print(f"gallery: each task needs at least 'task' and 'data' (got {missing}).")
+        return 2
+    session = build_gallery_session(specs)
+    serve(session, host="127.0.0.1", port=args.port, open_browser=not getattr(args, "no_browser", False))
+    return 0
+
+
 def _query(args) -> int:
     from .query import needs_review_episodes, phase_contact_sheet
 
@@ -266,6 +306,7 @@ _DISPATCH = {
     "annotate": _annotate,
     "review": _review,
     "inspect": _inspect,
+    "gallery": _gallery,
     "query": _query,
     "trial-report": _trial_report,
     "reliability": _reliability,
