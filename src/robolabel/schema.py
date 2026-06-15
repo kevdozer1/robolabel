@@ -25,9 +25,11 @@ ANNOTATIONS_FILENAME = "annotations.parquet"
 COLUMNS: list[str] = [
     "schema_version", "source", "episode_id", "task", "num_frames", "fps",
     "record_type", "segment_idx", "start_frame", "end_frame", "subtask_text",
-    "phase", "target", "boundary_evidence",
-    "quality", "task_success_quality", "mistake", "boundary_clarity", "control_mode", "reason",
+    "phase", "target", "boundary_evidence", "active_dof",
+    "quality", "task_success_quality", "mistake", "boundary_clarity", "control_mode",
+    "control_modality", "reason",
     "subgoal_frame_idx", "subgoal_image_path",
+    "retrieved_subgoal_episode_id", "retrieved_subgoal_frame_idx",
     "provider", "model", "strategy", "cost_usd", "receipt_path",
 ]
 
@@ -42,6 +44,7 @@ class SubtaskSegment:
     phase: str | None = None       # closed-vocabulary phase label (S2+)
     evidence: str | None = None    # one-line visual evidence for the boundary (S1+)
     target: str | None = None      # v3: grounded object/destination ("red cube"); "phase -> target"
+    active_dof: str | None = None  # v4: 'arm'|'gripper'|'both'|'none' from action-dim change (deterministic)
 
 
 @dataclass
@@ -51,14 +54,20 @@ class EpisodeMetadata:
     mistake: bool | None = None
     boundary_clarity: str | None = None
     control_mode: str | None = None         # strategy metadata, e.g. end_effector
+    control_modality: str | None = None     # v4: 'joint'|'end-effector' from action feature names (deterministic)
     reason: str = ""
 
 
 @dataclass
 class Subgoal:
     segment_idx: int
-    frame_idx: int
+    frame_idx: int                          # the REAL same-episode end-of-sub-step keyframe (ground truth)
     image_path: str | None = None
+    # v4: an OPTIONAL retrieved subgoal — the same-phase end frame from a DIFFERENT episode.
+    # Stored alongside the real keyframe (never replaces it) to support copy-shortcut-free
+    # policy training/eval. None when no same-phase candidate exists or retrieval wasn't run.
+    retrieved_episode_id: str | None = None
+    retrieved_frame_idx: int | None = None
 
 
 @dataclass
@@ -93,16 +102,18 @@ class EpisodeAnnotation:
             rows.append({**base, "record_type": "episode_metadata",
                          "quality": m.quality, "task_success_quality": m.task_success_quality,
                          "mistake": m.mistake, "boundary_clarity": m.boundary_clarity,
-                         "control_mode": m.control_mode, "reason": m.reason,
-                         "cost_usd": self.cost_usd, "receipt_path": receipt})
+                         "control_mode": m.control_mode, "control_modality": m.control_modality,
+                         "reason": m.reason, "cost_usd": self.cost_usd, "receipt_path": receipt})
         for seg in self.subtasks:
             rows.append({**base, "record_type": "subtask", "segment_idx": seg.segment_idx,
                          "start_frame": seg.start_frame, "end_frame": seg.end_frame,
-                         "subtask_text": seg.subtask_text,
-                         "phase": seg.phase, "target": seg.target, "boundary_evidence": seg.evidence})
+                         "subtask_text": seg.subtask_text, "phase": seg.phase, "target": seg.target,
+                         "boundary_evidence": seg.evidence, "active_dof": seg.active_dof})
         for sg in self.subgoals:
             rows.append({**base, "record_type": "subgoal", "segment_idx": sg.segment_idx,
-                         "subgoal_frame_idx": sg.frame_idx, "subgoal_image_path": sg.image_path})
+                         "subgoal_frame_idx": sg.frame_idx, "subgoal_image_path": sg.image_path,
+                         "retrieved_subgoal_episode_id": sg.retrieved_episode_id,
+                         "retrieved_subgoal_frame_idx": sg.retrieved_frame_idx})
         return rows
 
 
@@ -131,6 +142,23 @@ def write_annotations(annotations: list[EpisodeAnnotation], out_dir: str | Path)
     return path
 
 
+def save_dataframe(df: pd.DataFrame, out_dir: str | Path) -> Path:
+    """Write an already-built sidecar DataFrame back to ``annotations.parquet``.
+
+    Used by enrichment passes (``robolabel enrich``) that add columns to an existing sidecar
+    without rebuilding the annotation objects. Missing schema columns are added as null.
+    """
+    out = Path(out_dir)
+    path = out / ANNOTATIONS_FILENAME if out.is_dir() or not out.suffix else out
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frame = df.copy()
+    for col in COLUMNS:
+        if col not in frame.columns:
+            frame[col] = None
+    frame[COLUMNS].to_parquet(path, index=False)
+    return path
+
+
 def read_annotations(path: str | Path) -> pd.DataFrame:
     """Read an annotations sidecar (file or directory containing it)."""
     p = Path(path)
@@ -150,7 +178,7 @@ def episode_records(df: pd.DataFrame, episode_id: str) -> dict[str, Any]:
     meta_rows = ep[ep["record_type"] == "episode_metadata"]
     metadata = meta_rows.iloc[0].to_dict() if not meta_rows.empty else {}
     subtask_cols = ["segment_idx", "start_frame", "end_frame", "subtask_text"]
-    for optional in ("phase", "target", "boundary_evidence"):  # v2/v3; absent in older files
+    for optional in ("phase", "target", "boundary_evidence", "active_dof"):  # v2/v3/v4; absent in older files
         if optional in ep.columns:
             subtask_cols.append(optional)
     subtasks = (
@@ -159,10 +187,14 @@ def episode_records(df: pd.DataFrame, episode_id: str) -> dict[str, Any]:
         [subtask_cols]
         .to_dict("records")
     )
+    subgoal_cols = ["segment_idx", "subgoal_frame_idx", "subgoal_image_path"]
+    for optional in ("retrieved_subgoal_episode_id", "retrieved_subgoal_frame_idx"):  # v4
+        if optional in ep.columns:
+            subgoal_cols.append(optional)
     subgoals = (
         ep[ep["record_type"] == "subgoal"]
         .sort_values("segment_idx")
-        [["segment_idx", "subgoal_frame_idx", "subgoal_image_path"]]
+        [subgoal_cols]
         .to_dict("records")
     )
     num_frames = int(ep["num_frames"].iloc[0]) if not ep.empty else 0
@@ -201,16 +233,20 @@ def export_jsonl(annotations_dir: str | Path, out_path: str | Path) -> Path:
                 "mistake": _opt_bool(meta.get("mistake")),
                 "boundary_clarity": meta.get("boundary_clarity"),
                 "control_mode": meta.get("control_mode"),
+                "control_modality": meta.get("control_modality"),
                 "reason": meta.get("reason"),
             },
             "subtasks": [
                 {"segment_idx": _opt_int(s["segment_idx"]), "start_frame": _opt_int(s["start_frame"]),
-                 "end_frame": _opt_int(s["end_frame"]), "subtask_text": s["subtask_text"]}
+                 "end_frame": _opt_int(s["end_frame"]), "subtask_text": s["subtask_text"],
+                 "active_dof": s.get("active_dof")}
                 for s in rec["subtasks"]
             ],
             "subgoals": [
                 {"segment_idx": _opt_int(s["segment_idx"]), "frame_idx": _opt_int(s["subgoal_frame_idx"]),
-                 "image_path": s["subgoal_image_path"]}
+                 "image_path": s["subgoal_image_path"],
+                 "retrieved_episode_id": s.get("retrieved_subgoal_episode_id"),
+                 "retrieved_frame_idx": _opt_int(s.get("retrieved_subgoal_frame_idx"))}
                 for s in rec["subgoals"]
             ],
         }

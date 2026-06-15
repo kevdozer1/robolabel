@@ -2,6 +2,18 @@
 
 ## 0.2.0 (unreleased) — cross-task generalization + open vocabulary
 
+- **Deterministic conditioning fields (schema v4, additive; `robolabel enrich`).** Three
+  data-derived columns, no VLM: `control_modality` (`joint`/`end-effector`, from the action
+  feature names), per-segment `active_dof` (`arm`/`gripper`/`both`, from which action dims move
+  beyond a threshold), and an optional **retrieved subgoal** (`retrieved_subgoal_episode_id` /
+  `_frame_idx` — a same-phase end frame from a *different* episode, stored **alongside** the real
+  keyframe, never replacing it). The retrieved subgoal is for copy-shortcut-free policy eval;
+  robolabel **selects** real frames and **does not generate** images (`docs/why.md`). v1/v2/v3
+  files still read. `control.py`, `retrieve.py`, `robolabel enrich --control --retrieve-subgoals`.
+- **Presentation GIF** (`docs/figures/grounded_annotations.gif`) — grounded annotations on three
+  tasks (pick-place, pour, fold): `phase → target` + timeline/playhead, quality, the real
+  end-of-sub-step subgoal keyframes ("selected — not generated") + retrieved subgoals, and the
+  control line. `scripts/make_gif.py`.
 - **`robolabel gallery`** — load several task datasets into one task-grouped view (the
   grounded lane shown per task), so you can eyeball grounded across pick-place / stacking /
   pour / fold in one browsable page. Multi-source frame routing (each task keeps its own

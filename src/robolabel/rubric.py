@@ -141,6 +141,11 @@ class Rubric:
     def gripper_baseline(self) -> dict[str, Any]:
         return dict(self.data.get("gripper_baseline", {}))
 
+    # --- deterministic control annotations (active_dof) ------------------- #
+    @property
+    def active_dof_threshold(self) -> float:
+        return float(self.data.get("control", {}).get("active_dof_threshold", 0.15))
+
 
 def _fill(template: str, **values: object) -> str:
     """Substitute ``{key}`` placeholders without touching literal JSON braces.

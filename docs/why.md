@@ -59,3 +59,21 @@ not condemn the annotations — it scopes them. What they target:
 
 Stating where the evidence points — conditioning and curation, not world-modeling — is the
 point of this page. See the README's "What these annotations are for" for the short version.
+
+## A note on subgoals and the copy shortcut
+
+The real, same-episode end-of-sub-step frame is the **ground-truth** subgoal — it is the
+correct target at training time, and what a goal-image objective should regress toward. The
+trap is at **policy training/eval time**: if you condition a policy on the real future frame
+*from the same rollout*, the model can learn to "copy the last frame" instead of learning the
+sub-step — an evaluation shortcut that flatters the policy without teaching it anything.
+
+The usual fixes substitute a goal image the policy did **not** see in this episode: a
+**retrieved** subgoal (a real same-phase frame from a *different* episode) or a **generated**
+subgoal (a world-model / image-generation rollout, e.g. the π0.7 line of work). robolabel
+supports the first directly — `robolabel enrich --retrieve-subgoals` stores a same-phase
+keyframe from another episode alongside the real one (schema v4, never replacing it). It does
+**not** do the second: **robolabel generates no images.** Subgoal generation is a downstream
+*policy/world-model* capability, deliberately out of scope here — robolabel only *selects* real
+frames and is honest about which is which (the real keyframe vs. the retrieved one are separate
+columns, and the presentation GIF labels both "selected — not generated").

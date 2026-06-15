@@ -1,18 +1,52 @@
-# Run summary (v0.2 close-out + cross-task probe)
+# Run summary (conditioning fields round-out — schema v4)
 
-This run brought `robolabel` to a clean launchable state: it re-graded the v3 `phase → target`
-labels (phases correct, targets 100%, one target-naming residual → `CLAIMS.md` row 15 now
-`fixed-and-spot-checked`), scoped the tool in the README and `docs/why.md` to VLA
-subtask-conditioning + dataset curation rather than world-model training, reconciled the
-honest-state docs, and verified the wheel builds, passes `twine check`, and installs into a
-fresh venv to run `robolabel demo` offline. It also shipped a first-class open-vocabulary
-grounded variant (`S2-open`; the closed-vocab `S2` default is untouched) and spent **$0.75 of
-the $6 ceiling** on a gold-free cross-task probe over pour and cloth-fold. **Finding:**
-frame-grounding still eliminates the catastrophic failure bands off pick-and-place (**0/8** on
-both pour and fold), while the closed pick-and-place phase vocabulary degrades — 17.5% of pour
-segments coerced to `other` — exactly where the open-vocab phases (`pour water`, `perform
-fold`) read correctly. State: **105 tests pass**, ruff clean, secret scan clean, `.env`
-git-ignored, frozen SO-101 ablation numbers untouched, and nothing pushed or published.
-**Publish** when ready with `python -m twine upload dist/*` (after reserving the `robolabel`
-PyPI/GitHub name); **the one decision left to you** is whether to push `main` to GitHub and
-publish to PyPI.
+Additive, honest conditioning fields. No world model, no image generation; the grounded
+strategy is untouched and remains the validated core.
+
+## Fields added (schema v4, additive — v1/v2/v3 still read)
+
+- **`control_modality`** (per episode) — `joint` vs `end-effector`.
+- **`active_dof`** (per subtask) — `arm` / `gripper` / `both` / `none`.
+- **`retrieved_subgoal_episode_id` / `retrieved_subgoal_frame_idx`** (per subgoal) — an
+  optional retrieved subgoal stored **alongside** the real `subgoal_frame_idx`, never replacing it.
+
+## How they're computed (one line each — so captions/docs are accurate)
+
+- **control_modality** — read the dataset's `action` feature names: all `*.pos` ⇒ `joint`,
+  Cartesian/pose axes (x/y/z/roll/…) ⇒ `end-effector`. Deterministic; `None` if no names.
+- **active_dof** — per segment, a dof dim "moved" if its range over the segment exceeds
+  `rubric.yaml control.active_dof_threshold` (0.15) of that dim's full-episode range; arm vs
+  gripper split by the `gripper`-named action dim (else last dim). Deterministic, no VLM.
+- **real subgoal** — unchanged: the real end-of-sub-step frame of the segment (ground truth).
+- **retrieved subgoal** — the end frame of a **same-phase** segment from a **different** episode,
+  chosen by nearest cheap frame embedding (12×12 grayscale) or a seeded random pick; left null
+  when no other episode shares the phase. robolabel **selects** real frames; it does **not**
+  generate images.
+
+## Artifacts
+
+- `src/robolabel/control.py`, `retrieve.py`; `robolabel enrich --control --retrieve-subgoals`.
+- `docs/figures/grounded_annotations.gif` — 3 panels (pick-place ep7, pour ep5, fold ep4):
+  `phase → target` + timeline/playhead, quality, real keyframes ("selected — not generated") +
+  retrieved subgoals, and the control line. `scripts/make_gif.py`.
+- Docs: `SCHEMA.md` (v4 columns), README (GIF + scope note), `docs/why.md` (copy-shortcut /
+  retrieved-vs-generated, π0.7 reference, no image gen), `CLAIMS.md` rows 17–18, CHANGELOG.
+
+## State
+
+- **114 tests pass** (+7: control + retrieve), ruff clean. Frozen SO-101 ablation numbers, the
+  eval split, S0, and the closed-vocab default all untouched. `.env` git-ignored.
+- **New API spend: $0.015** — one episode (pick-place ep7, grounded S2 Flash); the existing
+  pour/fold probe sets were reused; everything else is dataset reads + frame extraction.
+- Nothing pushed or published.
+
+## What still needs your eyes
+
+1. **The GIF** (`docs/figures/grounded_annotations.gif`, ~3 MB) — eyeball it and decide if it's
+   the README hero you want (size/layout are easy to tune in `scripts/make_gif.py`).
+2. **`active_dof_threshold = 0.15`** is a documented choice (CLAIMS row 17), not validated
+   against human DoF labels — confirm it reads right on your tasks (it currently gives the
+   sensible `pour water → arm`, `retract → arm`, manipulation → `both`).
+3. The **retrieved subgoal is a selection, not a proven win** — its downstream training/eval
+   benefit is explicitly untested (CLAIMS row 18).
+4. Whether to **commit the GIF** and **push** (still your call from the prior run).

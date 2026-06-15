@@ -111,6 +111,21 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", default="demo_out")
     p.add_argument("--episodes", type=int, default=3)
 
+    p = sub.add_parser("enrich",
+                       help="Add deterministic, data-derived fields to a sidecar (control + retrieved subgoals).")
+    p.add_argument("--annotations", required=True)
+    p.add_argument("--control", action="store_true",
+                   help="add control_modality (episode) + active_dof (per segment) from the action stream")
+    p.add_argument("--retrieve-subgoals", action="store_true",
+                   help="add a retrieved subgoal per segment (same-phase end frame from another episode)")
+    p.add_argument("--retrieval-method", choices=["embedding", "random"], default="embedding")
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--source", choices=["lerobot", "directory"], default=None)
+    p.add_argument("--target", default=None, help="dataset (for --control actions and embedding retrieval frames)")
+    p.add_argument("--camera-key", default=None)
+    p.add_argument("--episodes", dest="episodes_spec", default=None,
+                   help='frame-source episode range for embedding retrieval, e.g. "0-7"')
+
     args = parser.parse_args(argv)
     return _DISPATCH[args.command](args)
 
@@ -252,6 +267,52 @@ def _gallery(args) -> int:
     return 0
 
 
+def _enrich(args) -> int:
+    import json as _json
+
+    from .control import enrich_control, load_actions
+    from .retrieve import retrieve_subgoals
+    from .rubric import load_rubric
+    from .schema import list_episode_ids, read_annotations, save_dataframe
+
+    df = read_annotations(args.annotations)
+    did: list[str] = []
+    if args.control:
+        if not args.target:
+            print("enrich --control needs --target (the dataset, to read the action stream).")
+            return 2
+        actions, names = load_actions(args.target)
+        df = enrich_control(df, actions, names, load_rubric().active_dof_threshold)
+        n = int((df["record_type"] == "subtask").sum())
+        did.append(f"control_modality + active_dof ({n} segments; modality={df['control_modality'].dropna().unique().tolist()})")
+    if args.retrieve_subgoals:
+        getter = None
+        if args.retrieval_method == "embedding" and args.source and args.target:
+            from .adapters import build_source
+            from .inspect_server import parse_episodes
+            kwargs = {"camera_key": args.camera_key} if (args.source == "lerobot" and args.camera_key) else {}
+            eps_spec = parse_episodes(args.episodes_spec)
+            if eps_spec is None:  # default: contiguous prefix covering the annotated episode ids
+                ids = [int(e) for e in list_episode_ids(df) if str(e).isdigit()]
+                eps_spec = list(range(max(ids) + 1)) if ids else None
+            if eps_spec is not None:
+                kwargs["episodes"] = eps_spec
+            src = build_source(args.source, args.target, **kwargs)
+            srcmap = {ep.episode_id: ep for ep in src}
+            getter = lambda e, f: srcmap[e].frame(int(f))  # noqa: E731
+        method = "embedding" if getter else "random"
+        df = retrieve_subgoals(df, frame_getter=getter, method=method, seed=args.seed)
+        have = int(df["retrieved_subgoal_frame_idx"].notna().sum())
+        total = int((df["record_type"] == "subgoal").sum())
+        did.append(f"retrieved subgoals ({have}/{total} matched, method={method})")
+    if not did:
+        print("enrich: pass --control and/or --retrieve-subgoals.")
+        return 2
+    path = save_dataframe(df, args.annotations)
+    print(_json.dumps({"out": str(path), "added": did}, indent=2))
+    return 0
+
+
 def _query(args) -> int:
     from .query import needs_review_episodes, phase_contact_sheet
 
@@ -307,6 +368,7 @@ _DISPATCH = {
     "review": _review,
     "inspect": _inspect,
     "gallery": _gallery,
+    "enrich": _enrich,
     "query": _query,
     "trial-report": _trial_report,
     "reliability": _reliability,

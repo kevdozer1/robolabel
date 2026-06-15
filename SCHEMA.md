@@ -7,20 +7,26 @@ other.
 
 ## `annotations.parquet` (VLM output)
 
-Schema version: **`robolabel/annotations/v3`** (stored in every row's
+Schema version: **`robolabel/annotations/v4`** (stored in every row's
 `schema_version` column; bump it on any breaking change). Long format — one row
 per record, three record types per episode.
 
 **v2** adds three columns for the annotation-strategy layer: `phase` and
 `boundary_evidence` (per subtask) and `strategy` (per episode). **v3** adds one
 more per-subtask column, `target` — the grounded object/destination slot, so a
-label reads `phase → target` (e.g. `approach → red cube`). All of these are
-optional and null under the baseline strategy (S0). The change is purely
-**additive**: **v1 and v2 files still read** — absent columns are treated as null.
+label reads `phase → target` (e.g. `approach → red cube`). **v4** adds four
+**deterministic, data-derived** conditioning columns (no VLM): `control_modality`
+(per episode), `active_dof` (per subtask), and a `retrieved_subgoal_episode_id` /
+`retrieved_subgoal_frame_idx` pair (per subgoal — a same-phase keyframe from a
+*different* episode, stored **alongside** the real `subgoal_frame_idx`, never
+replacing it). All of these are optional. The change is purely **additive**: **v1,
+v2, and v3 files still read** — absent columns are treated as null. The v4 fields
+are written by `robolabel enrich` (see `control.py` / `retrieve.py`), not by the
+annotate pass.
 
 | column | type | record types | meaning |
 |---|---|---|---|
-| `schema_version` | str | all | `robolabel/annotations/v3` |
+| `schema_version` | str | all | `robolabel/annotations/v4` |
 | `source` | str | all | always `vlm` in this file |
 | `episode_id` | str | all | stable id from the adapter |
 | `task` | str? | all | task string if the dataset has one |
@@ -34,14 +40,18 @@ optional and null under the baseline strategy (S0). The change is purely
 | `phase` | str? | subtask | **v2**; closed-vocabulary phase (S2+), e.g. `approach`/`grasp` |
 | `target` | str? | subtask | **v3**; grounded object/destination this subtask acts on (S2+), e.g. `red cube`; null for `retract` |
 | `boundary_evidence` | str? | subtask | **v2**; one-line visual evidence for the boundary (S1+) |
+| `active_dof` | str? | subtask | **v4**; `arm`/`gripper`/`both`/`none` — which dof group moves over the segment (deterministic, from the action stream) |
 | `quality` | int? | episode_metadata | curation/training-usefulness, 1–5 |
 | `task_success_quality` | int? | episode_metadata | task-completion score, 1–5 |
 | `mistake` | bool? | episode_metadata | clear visible mistake |
 | `boundary_clarity` | str? | episode_metadata | e.g. `clear`/`partial`/`weak` |
-| `control_mode` | str? | episode_metadata | strategy metadata if provided |
+| `control_mode` | str? | episode_metadata | legacy strategy metadata if provided (superseded by `control_modality`) |
+| `control_modality` | str? | episode_metadata | **v4**; `joint`/`end-effector` from the action feature names (deterministic) |
 | `reason` | str? | episode_metadata | the VLM's stated evidence |
-| `subgoal_frame_idx` | int? | subgoal | frame index of the subgoal |
+| `subgoal_frame_idx` | int? | subgoal | frame index of the **real** end-of-sub-step subgoal (ground truth) |
 | `subgoal_image_path` | str? | subgoal | extracted PNG path (if `--no-images` not set) |
+| `retrieved_subgoal_episode_id` | str? | subgoal | **v4**; episode the retrieved (same-phase) subgoal came from; null if none |
+| `retrieved_subgoal_frame_idx` | int? | subgoal | **v4**; frame index of the retrieved subgoal in that other episode |
 | `provider` | str | all | provider name (gemini/openai/qwen/mock) |
 | `model` | str | all | model id |
 | `strategy` | str? | all | **v2**; annotation strategy name (`S0`..`S4`); null == baseline |

@@ -17,6 +17,13 @@ not "good labels" — it is **drafts, plus an honest measurement of how good the
 
 ![What robolabel adds to one raw LeRobot episode: subtask boundaries, a quality judgment, and subgoal keyframes.](docs/figures/annotation_overview.png)
 
+![Grounded annotations on three tasks (pick-place, pour, fold): the current phase → target sub-step, a segment timeline with playhead, the episode quality, the real end-of-sub-step subgoal keyframes (selected, never generated), and the deterministic control line (modality + active DoF).](docs/figures/grounded_annotations.gif)
+
+> The subgoal keyframes above are **real frames selected** from the episode (and, where shown,
+> retrieved from other episodes) — robolabel does **not** generate images. The control line
+> (`joint` / `end-effector`, and per-segment `active_dof`) is read deterministically from the
+> action stream, not inferred.
+
 ## See it
 
 **The verification viewer** (`robolabel inspect`) puts the human gold and every strategy
@@ -122,7 +129,15 @@ the use where the evidence actually supports it.
 - **Episode quality (1–5)** → dataset curation: keep / re-check / drop an episode before it
   reaches a trainer.
 - **Subgoal keyframes** → the one output with cross-paradigm reach: goal-conditioned
-  planning / goal-image BC, independent of the conditioning stack.
+  planning / goal-image BC, independent of the conditioning stack. The **real** end-of-sub-step
+  frame is the ground-truth subgoal (correct at training time). For policy *training/eval*,
+  feeding the real same-episode frame invites a "copy the last frame" shortcut — so robolabel
+  also stores an **optional retrieved subgoal** (the same-phase end frame from a *different*
+  episode) you can substitute at test time (a generated subgoal, e.g. π0.7-style, is the other
+  option — but robolabel does **not** generate images; it only *selects* real frames).
+- **Control fields** (deterministic, no VLM): `control_modality` (`joint` / `end-effector`,
+  from the action feature names) and per-segment `active_dof` (`arm` / `gripper` / `both`,
+  from which action dims move) — read straight from the dataset, never inferred.
 
 They are **not** world-model training inputs. The one preregistered, controlled test of
 using a conditioning signal like this to train a JEPA-style world model came back

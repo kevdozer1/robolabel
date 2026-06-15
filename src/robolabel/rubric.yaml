@@ -199,6 +199,12 @@ gripper_baseline:
   ee_pause_window: 40             # look this many frames before a gripper event for the arm pause
   min_segment_frames: 5           # drop boundaries that would make a segment shorter than this
 
+# Deterministic control annotations (robolabel/control.py; no VLM). active_dof marks a segment's
+# dof group "moved" when its per-dim range over the segment exceeds this fraction of the dim's
+# full-episode range.
+control:
+  active_dof_threshold: 0.15
+
 gate:
   # A collapsed score distribution (e.g. every episode scored 5) is a red flag that
   # the VLM is not discriminating. Flag when distinct quality scores are too few.
