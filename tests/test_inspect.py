@@ -10,7 +10,16 @@ from pathlib import Path
 from threading import Thread
 
 from robolabel.inspect_data import assemble, build_episode, segments_from_records
-from robolabel.inspect_server import InspectSession, make_handler
+from robolabel.inspect_server import InspectSession, make_handler, parse_episodes
+
+
+def test_parse_episodes():
+    assert parse_episodes(None) is None
+    assert parse_episodes("") is None
+    assert parse_episodes("0-7") == [0, 1, 2, 3, 4, 5, 6, 7]
+    assert parse_episodes("0,2,5") == [0, 2, 5]
+    assert parse_episodes("3") == [3]
+    assert parse_episodes("0-2,5") == [0, 1, 2, 5]
 
 
 def _tracks():

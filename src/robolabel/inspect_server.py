@@ -228,12 +228,37 @@ def serve(session: InspectSession, host: str = "127.0.0.1", port: int = 8799, op
         server.server_close()
 
 
+def parse_episodes(spec: str | None) -> list[int] | None:
+    """Parse an episode spec like "0-7" or "0,2,5" into a list of indices (None = all).
+
+    Use a contiguous range (e.g. "0-7") matching how the data was annotated — frame
+    indices are global, so a non-contiguous subset would misalign the served frames.
+    """
+    if not spec:
+        return None
+    out: list[int] = []
+    for part in str(spec).split(","):
+        part = part.strip()
+        if "-" in part:
+            a, b = part.split("-", 1)
+            out.extend(range(int(a), int(b) + 1))
+        elif part:
+            out.append(int(part))
+    return out or None
+
+
 def build_session(data: str, source_kind: str | None, target: str | None,
-                  grades: str | None, camera_key: str | None = None) -> InspectSession:
+                  grades: str | None, camera_key: str | None = None,
+                  episodes: str | None = None) -> InspectSession:
     source = None
     if source_kind and target:
         from .adapters import build_source
-        kwargs = {"camera_key": camera_key} if (source_kind == "lerobot" and camera_key) else {}
+        kwargs: dict = {}
+        if source_kind == "lerobot" and camera_key:
+            kwargs["camera_key"] = camera_key
+        eps = parse_episodes(episodes)
+        if eps is not None:
+            kwargs["episodes"] = eps
         source = build_source(source_kind, target, **kwargs)
     return InspectSession(data, source=source, grades_path=grades)
 
@@ -244,12 +269,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--source", choices=["lerobot", "directory"], default=None)
     p.add_argument("--target", default=None)
     p.add_argument("--camera-key", default=None)
+    p.add_argument("--episodes", default=None,
+                   help='limit the loaded source to these episodes, e.g. "0-7" (contiguous; '
+                        "matches how the data was annotated — avoids downloading the whole dataset)")
     p.add_argument("--grades", default=None, help="(blind mode) JSON file to record grades into")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8799)
     p.add_argument("--no-browser", action="store_true")
     args = p.parse_args(argv)
-    session = build_session(args.data, args.source, args.target, args.grades, args.camera_key)
+    session = build_session(args.data, args.source, args.target, args.grades, args.camera_key,
+                            episodes=getattr(args, "episodes", None))
     serve(session, host=args.host, port=args.port, open_browser=not args.no_browser)
     return 0
 

@@ -51,6 +51,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--source", choices=["lerobot", "directory"], default=None)
     p.add_argument("--target", default=None)
     p.add_argument("--camera-key", default=None)
+    p.add_argument("--episodes", default=None,
+                   help='limit the loaded source to these episodes, e.g. "0-7" (contiguous; '
+                        "matches how the data was annotated — avoids downloading the whole dataset)")
     p.add_argument("--grades", default=None, help="(blind mode) JSON file to record grades into")
     p.add_argument("--port", type=int, default=8799)
     p.add_argument("--no-browser", action="store_true")
@@ -203,7 +206,8 @@ def _demo(args) -> int:
 def _inspect(args) -> int:
     from .inspect_server import build_session, serve
 
-    session = build_session(args.data, args.source, args.target, args.grades, args.camera_key)
+    session = build_session(args.data, args.source, args.target, args.grades, args.camera_key,
+                            episodes=getattr(args, "episodes", None))
     serve(session, host="127.0.0.1", port=args.port, open_browser=not getattr(args, "no_browser", False))
     return 0
 
