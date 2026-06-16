@@ -4,59 +4,46 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 
-## What it does
-
-robolabel is **automated, model-agnostic conditioning-annotation and curation for VLA
-finetuning on [LeRobot](https://github.com/huggingface/lerobot) data, built to run at scale.**
-One config drives a modular pipeline (`robolabel run --config run.yaml`): from a LeRobot
-dataset it auto-detects everything it needs and drafts, per episode, the **conditioning**
-signals a VLA finetune wants — subtask boundaries (`phase → target`), a quality score, optional
-speed/control metadata and subgoal keyframes — plus dataset-level **curation** (novelty + a
-value score with an optional fidelity-tier overlay). The minimal default is just segmentation +
-quality; every other module is one toggle.
-
-It is also honest about itself: the VLM drafts are **measured against a human**, in plain
-numbers, instead of assumed right. You watch the clips in a browser viewer and the tool tells
-you how often the model's boundaries, scores, and stated reasons match what you see. The output
-is a parquet sidecar plus an export in LeRobot's own subtask format. The pitch is not "good
-labels" — it is **drafts at scale, plus an honest measurement of how good they are, plus the
-curation to pick what to train on**.
-
-Quickstart: [`CONFIG.md`](CONFIG.md) (the run config) · [`PORTING.md`](PORTING.md) (zero config
-for LeRobot; one tiny file for non-LeRobot inputs).
+Automated, model-agnostic **conditioning-annotation and curation for VLA finetuning on
+[LeRobot](https://github.com/huggingface/lerobot) data**. One config drives a modular pipeline
+(`robolabel run --config run.yaml`) that, per episode, drafts the signals a VLA finetune wants —
+subtask boundaries (`phase → target`), an episode quality score, optional speed/control metadata,
+and subgoal keyframes — plus dataset-level curation (novelty + a value score). Any VLM can drive
+it, and every draft is **measured against a human gold set** rather than assumed correct. Output is
+a parquet sidecar plus an export in LeRobot's own subtask convention.
 
 ![What robolabel adds to one raw LeRobot episode: subtask boundaries, a quality judgment, and subgoal keyframes.](docs/figures/annotation_overview.png)
 
-![Grounded annotations on three tasks (pick-place, pour, fold): the current phase → target sub-step, a segment timeline with playhead, the episode quality, the real end-of-sub-step subgoal keyframes (selected, never generated), and the deterministic control line (modality + active DoF).](docs/figures/grounded_annotations.gif)
+![Grounded annotations on three tasks (pick-place, pour, fold): the current phase → target sub-step, a segment timeline with playhead, the episode quality, the real end-of-sub-step subgoal keyframes (selected, never generated), and the deterministic control line.](docs/figures/grounded_annotations.gif)
 
-> The subgoal keyframes above are **real frames selected** from the episode (and, where shown,
-> retrieved from other episodes) — robolabel does **not** generate images. The control line
-> (`joint` / `end-effector`, and per-segment `active_dof`) is read deterministically from the
-> action stream, not inferred.
+> Subgoal keyframes are **real frames selected** from the episode — robolabel does **not** generate
+> images. The control line (`joint` / `end-effector`) is read from the action stream, not inferred.
 
-## See it
+## Install & quickstart
 
-**The verification viewer** (`robolabel inspect`) puts the human gold and every strategy
-on parallel, color-coded boundary tracks over the video, with a tab that shows each
-evidence string next to a thumbnail of the exact frame it cites — so you can check whether
-the model's stated reason is true:
+```bash
+pip install -e '.[lerobot]'      # core needs no extra deps; lerobot for datasets
+export GEMINI_API_KEY=...
 
-> _Capture your own:_ `robolabel inspect --data inspect_data/so101.json --source lerobot
-> --target lerobot/svla_so101_pickplace --camera-key observation.images.side`
-> (screenshot placeholder).
+# draft annotations (boundaries as frame indices + per-segment evidence):
+robolabel annotate --source lerobot --target lerobot/svla_so101_pickplace \
+  --provider gemini --strategy S2 --limit 5 --out ann
 
-**The gallery** (`robolabel gallery`) loads several task datasets into one task-grouped view —
-the grounded lane shown per task — so you can eyeball grounded across pick-place, stacking,
-pour, and fold in one page (`robolabel gallery --config gallery.json`).
+robolabel gate        --annotations ann                    # automatic red flags (never drops)
+robolabel reliability --gold so101_gold.json               # VLM-vs-human agreement
+robolabel query       --annotations ann --phase grasp ...  # phase -> contact sheet
+robolabel export      --annotations ann --format lerobot --out ann_lerobot
+robolabel cost        --annotations ann                    # token + USD accounting
+```
 
-**The query path** (`robolabel query`) proves the labels are usable — e.g. *show me every
-grasp across the dataset* as a contact sheet:
+`robolabel demo` runs the whole pipeline offline with no API key. For the full config-driven
+pipeline see [`CONFIG.md`](CONFIG.md); for non-LeRobot inputs see [`PORTING.md`](PORTING.md). To
+eyeball results, `robolabel inspect` opens a per-episode verification viewer (gold + strategies on
+parallel boundary tracks, with an evidence-string-vs-frame check) and `robolabel gallery` shows
+several task datasets in one task-grouped view.
 
-![Every segment robolabel labeled "grasp", one tile per episode.](docs/figures/grasp_montage.png)
-
-Each grounded segment is labeled **`phase → target`** — a closed-vocabulary phase *and* the
-specific object it acts on, named from the scene, so two cubes don't both come back as a bare
-"approach":
+Each grounded segment is labeled **`phase → target`** — a fixed-vocabulary phase plus the specific
+object it acts on, named from the scene, so two cubes don't both come back as a bare "approach":
 
 ```text
 approach      → red cube    frames 0–41     "gripper descends toward the red cube"
@@ -66,158 +53,59 @@ release-place → blue cube   frames 120–168  "red cube set on top of the blue
 retract                     frames 169–199  "arm withdraws, gripper empty"
 ```
 
-The phase comes from a fixed vocabulary (objective across videosets); the target is grounded
-in the scene (specific). `target` is required for every phase except `retract`. See
-[`SCHEMA.md`](SCHEMA.md) for the column.
+`robolabel query --phase grasp` turns those labels into a contact sheet — e.g. every grasp in the
+dataset, one tile per episode. See [`SCHEMA.md`](SCHEMA.md) for every output column.
 
-## 60-second quickstart
+![Every segment robolabel labeled "grasp", one tile per episode.](docs/figures/grasp_montage.png)
 
-```bash
-pip install -e '.[lerobot]'           # core viewer needs no extra deps; lerobot for datasets
-export GEMINI_API_KEY=...
+## Providers, cost & batching
 
-# draft annotations with a grounded strategy (boundaries as frame indices + evidence):
-robolabel annotate --source lerobot --target lerobot/svla_so101_pickplace \
-  --provider gemini --strategy S2 --limit 5 --out ann
+robolabel is model-agnostic — a provider is one file (subclass `VLMProvider`, call
+`register_provider`). Built in:
 
-robolabel gate        --annotations ann                 # automatic red flags (never drops)
-robolabel reliability --gold so101_gold.json            # VLM-vs-human agreement, once you review
-robolabel query       --annotations ann --phase grasp --source lerobot \
-                      --target lerobot/svla_so101_pickplace --out grasp.png
-robolabel export      --annotations ann --format lerobot --out ann_lerobot   # LeRobot subtask convention
-```
+| provider | example model | credential | cost |
+|---|---|---|---|
+| `gemini` | `gemini-2.5-flash` (default) | `GEMINI_API_KEY` / `GOOGLE_API_KEY` | estimated from token counts |
+| `openai` | `gpt-4o` | `OPENAI_API_KEY` | tokens recorded; no USD asserted |
+| `qwen` | `Qwen/Qwen2.5-VL-7B-Instruct` (local) | — (GPU) | free |
+| `mock` | — | — | free (offline; powers `demo`) |
 
-Providers: `gemini`, `openai`, local `qwen`, `mock`. Strategies `S0`..`S4` (`S2` is the
-recommended default; `S0` is the cheap reproducible baseline). The offline `robolabel demo`
-runs the whole pipeline with no API key.
+- **Per episode, not per frame.** A labeler sends a single contact sheet of sampled keyframes per
+  call, so cost scales with the number of episodes, not the frame count. Override the model with
+  `--model` or `$ROBOVID_MODEL`.
+- **Free resume / caching.** Every call writes a raw receipt (`raw_receipts/`) with exact token
+  counts; re-running a partial or interrupted batch **reuses the successful receipts for free** and
+  only pays for the episodes still missing.
+- **Accounting.** `robolabel cost` sums per-episode and total USD from the provider pricing table
+  (Gemini Flash ≈ $0.30 / $2.50 per Mtok in/out; Flash-Lite ≈ $0.10 / $0.40; Pro ≈ $1.25 / $10.00).
+  Raw token counts are always in the receipts for an exact audit.
+- The deterministic modules (speed, control, novelty, curation, the gripper baseline) and the entire
+  offline `demo` path cost **$0**.
 
-## How well does it work
+## Measured, not assumed
 
-Measured on `lerobot/svla_so101_pickplace` against a 50-episode human gold set (30 tune /
-20 held-out test). One caveat applies to every number: **one task family, one annotator's
-gold, and the gold was built by correcting the baseline's drafts** (so it slightly favors
-the baseline).
+On `lerobot/svla_so101_pickplace` against a 50-episode human gold set — one caveat applies to every
+number: one task family, one annotator's gold, built by correcting the baseline's drafts.
 
-- **Failure tail, eliminated.** Out of the box, **25% (5 of 20)** held-out episodes come
-  back as a single "do the task" blob or as boundaries at uniform fifths of the duration.
-  The grounded strategy brings that to **0 of 20**. This is the most robust result and it
-  holds on held-out data.
-- **Boundary placement, better — even though mean overlap isn't.** Mean segment-overlap
-  IoU does *not* improve on held-out data (grounded **0.444** vs baseline **0.460**). But on
-  the metric that matters for conditioning — landing on the actual transition frame — the
-  grounded strategy hits **36% more** gold boundaries within ±5 frames (recall **0.307 vs
-  0.226**). It gets the transitions right; it doesn't pad the average.
-- **Quality scores: read with care.** The gold here is 49/50 "score 5", so a model that
-  always says 5 scores 0.97–1.00 — above both Gemini Flash and Pro. The number that means
-  something is the **catastrophic false-negative rate** (a human-5 scored ≤2, which would
-  silently filter good data): Flash 3/30, Pro **1/30**. **Uniform high scores on a clean,
-  same-y dataset are correct, not a bug** — quality discriminates on variable-quality corpora,
-  not on uniform ones, and robolabel never forces a spread. On such datasets the deterministic
-  **speed** descriptor (now a continuous, motion-defined `active_duration` — see below) is the
-  more informative episode metadata. Quality + speed are π0.7's two metadata signals — robolabel
-  produces both. (Per-issue quality flags — e.g. "gripper slip at frame N" — are a possible
-  future enhancement, not implemented.)
-- **The free baseline loses.** A proprioceptive segmenter from the gripper signal (no VLM,
-  $0) scores 0.18–0.20 IoU — the VLM beats it by ~0.10–0.25, so the API cost buys something.
-- **Generalization (fresh dataset, paired).** On a second, never-touched dataset
-  (`lerobot/svla_so100_stacking`, apache-2.0, no baseline-anchored gold), both strategies
-  ran on the same 20 episodes: the baseline collapsed **8 of 20 (40%)** into degenerate or
-  uniform-fifths blobs; the grounded strategy collapsed **0 of 20**. So **failure-band
-  elimination is verified on two datasets** (SO-101 held-out 5/20→0; fresh 8/20→0), with the
-  grounded evidence referencing the *new* scene. The *subjective* numbers (boundary acceptance,
-  phase accuracy, **evidence factual-accuracy**) are produced when you grade the clips blind;
-  until then they are **not yet claimed** — see "What is not yet shown."
+- **Failure tail eliminated.** Out of the box, 25% (5/20) held-out episodes come back as a single
+  "do the task" blob or boundaries at uniform fifths; the grounded strategy brings that to **0/20**
+  (and 0/20 on a fresh, never-touched stacking set). The most robust result.
+- **Better boundary placement.** Grounded lands **36% more** gold boundaries within ±5 frames
+  (recall 0.307 vs 0.226), even though mean segment-overlap IoU doesn't improve (0.444 vs 0.460).
+- **Quality scores** discriminate only on variable-quality corpora; on a uniform dataset the
+  deterministic, motion-defined **speed** descriptor is the more informative episode metadata.
 
-Every number above is stated with its evidence and caveat inline; none is asserted beyond the
-one task family it was measured on.
+Not shown: that these annotations improve downstream training (one preregistered test was negative),
+or that they generalize beyond this task family. Both are stated as untested, never implied.
 
-## What these annotations are for (and what they are not)
+## Composes with LeRobot Annotate
 
-robolabel's outputs target **VLA-style subtask conditioning and dataset curation** — not
-world-model training. Being explicit about that scope is deliberate: it points the tool at
-the use where the evidence actually supports it.
-
-- **Subtask boundaries + `phase → target` labels** → per-segment conditioning signals for
-  SARM/VLA-style policies, and a curation lens for spotting the bad episodes. *This is the
-  primary target.*
-- **Episode quality (1–5)** → dataset curation: keep / re-check / drop an episode before it
-  reaches a trainer.
-- **Subgoal keyframes** → the one output with cross-paradigm reach: goal-conditioned
-  planning / goal-image BC, independent of the conditioning stack. The **real** end-of-sub-step
-  frame is the ground-truth subgoal (correct at training time). For policy *training/eval*,
-  feeding the real same-episode frame invites a "copy the last frame" shortcut — so robolabel
-  also stores an **optional retrieved subgoal** (the same-phase end frame from a *different*
-  episode) you can substitute at test time (a generated subgoal, e.g. π0.7-style, is the other
-  option — but robolabel does **not** generate images; it only *selects* real frames).
-- **Control fields** (deterministic, no VLM): `control_modality` (`joint` / `end-effector`,
-  from the action feature names) and per-segment `active_dof` (`arm` / `gripper` / `both`,
-  from which action dims move) — read straight from the dataset, never inferred.
-
-They are **not** world-model training inputs. The one preregistered, controlled test of
-using a conditioning signal like this to train a JEPA-style world model came back
-**negative** — the apparent win was a latent-variance artifact that vanished under
-normalization. Scoping the tool to conditioning + curation,
-rather than implying a world-model win we did not measure, is a credibility feature.
-
-## When to use it / when not
-
-**Use it when** you have a LeRobot dataset, want VLM-drafted subtask/quality annotations,
-and — crucially — want to *measure* how trustworthy they are before feeding them anywhere.
-Use a grounded strategy when you never want a degenerate/uniform label in your data; use the
-gate to surface episodes to re-check; use the export to hand boundaries to a LeRobot
-consumer.
-
-**Don't use it** as a labeling oracle (it isn't — measure first), as a format converter
-(use a tool like forge), or as evidence that these annotations help training (they have not
-been shown to — see below). If your dataset has real quality variance, re-tune the rubric
-and re-measure; the defaults were tuned on tabletop pick-and-place.
-
-## Relationship to LeRobot Annotate
-
-robolabel is **not a competitor to [LeRobot Annotate](https://github.com/huggingface/lerobot-annotate)**
-— they compose. LeRobot Annotate is the canonical *manual* GUI for a human to author/correct
-subtask segments and persist them in the on-disk convention. robolabel is the *automated,
-at-scale* front of the same workflow: it auto-drafts the conditioning annotations and curates
-the dataset across many episodes, then **exports into the LeRobot subtask convention**
-(`export --format lerobot`, round-trip-tested through lerobot's own `load_subtasks`). The
-intended loop is **draft (robolabel) → manual review / edit (LeRobot Annotate) → train** — you
-let robolabel do the bulk pass and the curation, then a human fixes the cases the viewer/blind
-grade flags, in the format the trainer already reads.
-
-## Related tools and when to use them
-
-robolabel is **not** the first tool to put a VLM on robot demos. What it adds is a
-specific combination: LeRobot-native output, per-call provider receipts and cost, a
-*measured* strategy ablation, and a reliability report against human calibration.
-Here is the honest neighborhood (each verified against its own repo/paper):
-
-- **[LeRobot Annotate](https://github.com/huggingface/lerobot-annotate)** — Hugging Face's manual web UI for marking subtask segments and high-level dialogue on LeRobot episodes, persisting the canonical on-disk convention. *Use it when* you want a human to author/correct boundaries directly. robolabel **exports to its subtask convention** (`export --format lerobot`); the related in-`lerobot` SARM path auto-generates subtask annotations via a VLM but doesn't measure their reliability.
-- **[ATLAS](https://arxiv.org/abs/2604.26637)** — a keyboard-centric GUI for human segmentation of long-horizon demos, with time-synchronized multi-view video + proprioception (force/torque, gripper). *Use it when* you need to see robot time-series alongside video while hand-segmenting. (Paper/tool; no released repo linked.)
-- **[forge](https://github.com/arpitg1304/forge)** — a multi-format robot-data toolkit (RLDS/Open-X, LeRobot, GR00T, …) that converts, inspects, and runs **signal-level QC** scoring episodes from proprioception (smoothness, gripper chatter, saturation, …). *Use it when* you need format conversion or trajectory-quality QC — which is orthogonal to robolabel's *semantic* annotation reliability.
-- **[RoboAnnotatorX](https://roboannotatex.github.io/)** (ICCV 2025) — a multimodal-LLM framework that auto-generates dense annotations for long-horizon robot video, shipping the RoboX-VQA benchmark. *Use it when* you want a research-grade annotation model + video-understanding benchmark, not a per-annotation reliability workflow on your own data.
-- **[RoboInter](https://github.com/InternRobotics/RoboInter)** (ICLR 2026) — a semi-automatic GUI (SAM2 tracking + HITL) producing 10+ dense intermediate labels (masks, boxes, grasps, traces, subtasks). *Use it when* you need rich per-frame geometric labels at scale.
-- **[UVD](https://github.com/zcczhang/UVD)** — a training-free decomposer that finds subgoal boundaries from phase shifts in a frozen visual representation (no language, no VLM). *Use it when* you want annotation-free subgoal indices to feed goal-conditioned BC/RL.
-- **Generic labeling platforms — [CVAT](https://www.cvat.ai/)** (open-source CV labeling) and **[Encord](https://encord.com/)** (commercial multimodal labeling/curation SaaS). *Use them when* you need general-purpose video/data labeling; neither is LeRobot-aware nor measures VLM-draft reliability.
-
-## What is not yet shown
-
-Stated plainly so nobody assumes more than was measured:
-
-- **Training utility.** Whether these conditioning annotations actually improve a
-  downstream policy is **not demonstrated** — and in one preregistered, controlled test it
-  did not. Do not treat the labels as a known training win.
-- **Generalization beyond one task family.** The numbers above are SO-101 pick-and-place.
-  The fresh stacking-dataset blind trial exists to test generalization; its per-boundary,
-  per-phase, and **evidence factual-accuracy** numbers are produced when you grade it —
-  until then, treat generalization as untested.
-- **Quality discrimination.** Cannot be evaluated on a dataset that is 49/50 one score;
-  needs a dataset with real quality variance.
-- **Driving a trainer off the export.** The LeRobot subtask export round-trips and every
-  frame's index resolves correctly, but we
-  write a metadata overlay, not a per-frame column in the binary data — so instantiating a
-  full SARM/VLA dataloader on it is a next step, not a demonstrated capability.
+robolabel is the *automated, at-scale* front of the same workflow as
+[LeRobot Annotate](https://github.com/huggingface/lerobot-annotate) (the manual GUI): draft with
+robolabel → review and correct the flagged cases by hand → train, all in the subtask convention the
+trainer already reads (`export --format lerobot`, round-trip-tested through lerobot's `load_subtasks`).
 
 ## Status
 
-Beta, single-author. Schemas are versioned but may change before 1.0. Linux and macOS are
-supported (Windows is not a target). License: [Apache-2.0](LICENSE).
+Beta, single-author. Schemas are versioned but may change before 1.0. Linux and macOS (Windows is
+not a target). License: [Apache-2.0](LICENSE).
