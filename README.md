@@ -57,6 +57,45 @@ retract                     frames 169-199  "arm withdraws, gripper empty"
 
 See [`SCHEMA.md`](SCHEMA.md) for every output column.
 
+## Configuration
+
+`robolabel run --config run.yaml` drives the whole pipeline from one file: a `run` block (dataset,
+model, probe size) and a `modules` block where every module is an independent toggle. For a standard
+LeRobot dataset you provide nothing but `source`/`target`; camera, fps, control space, and
+arm/gripper dims are auto-detected. The minimal default runs just segmentation + quality.
+
+```yaml
+run:
+  dataset: { source: lerobot, target: lerobot/svla_so101_pickplace }   # camera_key: auto
+  model:   { provider: gemini, name: gemini-2.5-flash }
+  probe:   { max_episodes: 5 }
+  out: run_out/full
+modules:
+  segmentation: { enabled: true, strategy: grounded, vocabulary: open }  # closed = S2; baseline = S0
+  quality:      { enabled: true }
+  speed:        { enabled: true }
+  subgoals:     { enabled: true, retrieval: true }
+  control:      { enabled: true }
+  novelty:      { enabled: true }
+  curation:     { enabled: true, compress: true }
+```
+
+The module set is the implemented surface, all additive in the parquet output:
+
+| module | default | produces |
+|---|---|---|
+| `segmentation` | on | grounded `phase → target` subtask boundaries (open-vocab; `closed`/`baseline` available) |
+| `quality` | on | episode quality 1-5 (VLM) |
+| `speed` | off | motion-defined active duration (`active_frames`/`_seconds`/`_fraction`) plus a corpus-relative fast/medium/slow tier |
+| `subgoals` | off | the real end-of-sub-step keyframe (a pointer); optionally a same-phase keyframe retrieved from another episode |
+| `control` | off | `control_modality` (joint vs end-effector frame) plus the per-segment `active_dof` set (which component groups move) |
+| `novelty` | off | per-episode novelty (distance in a cheap frame embedding) |
+| `curation` | off | `curation_value = f(quality, novelty)` plus optional corpus-relative fidelity tiers (an overlay, never deletes) |
+
+Only `segmentation` and `quality` call the VLM; the rest are deterministic and cost $0. Modules run
+in dependency order, dataset-level ones (novelty, curation, retrieval) after the per-episode pass.
+Full reference: [`CONFIG.md`](CONFIG.md).
+
 ## Demo
 
 The three episodes in the figure above (pick-place, pour, fold) are bundled under [`demo/`](demo/)

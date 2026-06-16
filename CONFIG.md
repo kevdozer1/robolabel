@@ -38,7 +38,7 @@ modules:
   quality:      { enabled: true }
   speed:        { enabled: true, cuts: [0.3333, 0.6667] }
   subgoals:     { enabled: true, retrieval: true, retrieval_method: embedding }
-  control:      { enabled: true, active_dof: false }                      # active_dof low-discrimination here
+  control:      { enabled: true, active_dof: true }                       # per-segment active-component set
   novelty:      { enabled: true, k: 5 }
   curation:     { enabled: true, compress: true,
                   weights: { quality: 0.5, novelty: 0.5 }, top_cut: null }
@@ -52,11 +52,11 @@ modules:
 | `quality` | episode | **on** | — | episode quality 1–5 (VLM). Near-degenerate on easy datasets — see `speed` |
 | `speed` | episode→dataset | off | — | continuous, **motion-defined** `active_frames`/`active_seconds`/`active_fraction` (phase-agnostic) + raw `speed_norm`; a `fast`/`medium`/`slow` tier only when corpus-relative (else null) |
 | `subgoals` | episode→dataset | off | `segmentation` | real end-of-sub-step keyframe (pointer); `retrieval: true` adds a same-phase keyframe from another **gate-passed** episode (pointer). No image files written |
-| `control` | episode | off | `segmentation` | `control_modality` (joint vs end-effector coordinate frame); `active_dof: true` adds per-segment arm/gripper/both (optional, low-discrimination) |
+| `control` | episode | off | `segmentation` | `control_modality` (joint vs end-effector coordinate frame, dataset-level); `active_dof: true` (default on) adds the per-segment **set of component groups that move** (`arm`/`gripper`/`arm+gripper`/`none`), from each dim's smoothed within-segment range |
 | `novelty` | dataset | off | — | deterministic per-episode novelty (distance to nearest neighbours in a cheap frame embedding) |
 | `curation` | dataset | off | `quality`, `novelty` | raw `curation_value = f(quality, novelty)`; tiers (`full`/`reduced`/`minimal`, or `keep`/`cut`) are **corpus-relative + guarded** — assigned only when ≥ `min_population` heterogeneous episodes exist (else null, "insufficient population to tier"). Overlay only — never deletes |
 
 A module whose `requires` are not all enabled raises a clear error at validation. Everything is
-additive in the sidecar (schema v5); see [`SCHEMA.md`](SCHEMA.md). All deterministic modules
+additive in the output (schema v6); see [`SCHEMA.md`](SCHEMA.md). All deterministic modules
 (`speed`, `control`, `novelty`, `curation`) cost **$0** — only `segmentation`/`quality` call the
 VLM, and `robolabel run` reports per-module cost.
