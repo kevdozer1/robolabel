@@ -199,3 +199,29 @@ S0-anchored, and a single refinement pass does not move the contact boundaries m
 vs 0.22). The remaining segments keep moderate spread (CV ~0.4), so later boundaries are **not**
 severely compressed. Most of this is genuine approach-travel duration (the arm crosses the table)
 plus mild early under-segmentation — a tendency to note, not a pathology.
+
+## Proprioception-fused grasp/release snap — the second (and last) refinement attempt
+
+After the VLM dense-window refinement (3c) didn't help, the open question was whether a
+**deterministic, gripper-event** snap would. `snap.py` detects gripper open→close (grasp) and
+close→open (release) transitions (reusing the S_grip logic on `observation.state`) and snaps a
+grasp-onset / release-onset boundary to the nearest transition within a small window — never
+resegmenting, and a clean no-op when no transition lands in-window (so it does nothing on
+pour/fold action boundaries, where the gripper holds). Validated on the SO-101 human gold,
+grasp/release boundaries only (deterministic, **zero API**):
+
+| pick-place grasp/release boundaries vs gold (8 eps) | recall @±5 | MAE (matched) |
+|---|---|---|
+| WITHOUT snap | **0.174** (4/23) | 3.75 |
+| WITH snap (window 8) | **0.130** (3/23) | 3.33 |
+
+**Recall@±5 does not improve** at a small window (and a window sweep 5→12 on both `state` and
+`action` stays ≤ baseline; only an over-large window 20 nudges it 4→5). The cause is visible in
+ep0: the human gold (`[159, 174, 215]`) is **S0-anchored, not gripper-aligned** — the actual
+gripper close is frame 169 while the grounded grasp-onset sits at 82 and the gold's grasp
+boundary is 159/174; the gripper transition and the gold simply don't coincide here. So per the
+rule, **the snap is left OFF by default** (`segmentation.snap_contact`, available for datasets
+whose ground truth *is* gripper-aligned or who want physically-grounded contact frames).
+**Grasp/release boundary timing is the documented precision limit of the grounded segmentation**
+— two independent refinement attempts (VLM dense-window, deterministic gripper snap) did not move
+it against this gold. No GIF re-render (grasp/release did not visibly improve).

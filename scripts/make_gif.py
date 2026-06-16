@@ -31,7 +31,7 @@ PANELS = [
 ]
 OUT = Path("docs/figures/grounded_annotations.gif")
 STEPS = 36
-PANEL_W, VID_W, VID_H = 900, 200, 158
+PANEL_W, VID_W, VID_H = 900, 244, 192
 THUMB_W, THUMB_H = 74, 56
 SEG_COLORS = ["#2563eb", "#e8752a", "#59a14f", "#b4536b", "#8c6bb1", "#3aa0a0", "#9aa5b1"]
 INK, MUTED, GREEN = (24, 28, 36), (110, 118, 130), (40, 120, 60)
@@ -83,7 +83,7 @@ def cur_segment(segs, frame):
 
 def render_panel(P, frame_idx) -> Image.Image:
     segs, nf = P["segs"], P["nf"]
-    ph = 250
+    ph = 212
     panel = Image.new("RGB", (PANEL_W, ph), "white")
     d = ImageDraw.Draw(panel)
     panel.paste(_thumb(P["ep"].frame(frame_idx), VID_W, VID_H), (10, 10))
@@ -121,8 +121,7 @@ def render_panel(P, frame_idx) -> Image.Image:
 
 def main() -> int:
     panels = [load_panel(*p) for p in PANELS]
-    cap_h = 26
-    total_h = sum(render_panel(P, 0).height for P in panels) + cap_h
+    total_h = sum(render_panel(P, 0).height for P in panels)
     frames = []
     for t in range(STEPS):
         canvas = Image.new("RGB", (PANEL_W, total_h), "white")
@@ -132,10 +131,6 @@ def main() -> int:
             pim = render_panel(P, fi)
             canvas.paste(pim, (0, y))
             y += pim.height
-        ImageDraw.Draw(canvas).text(
-            (10, y + 6), "robolabel grounded annotations — subgoals are real selected frames "
-            "(never generated); speed + control read deterministically from the action stream.",
-            font=F_SM, fill=MUTED)
         frames.append(canvas)
         print(f"  step {t + 1}/{STEPS}", file=sys.stderr)
     OUT.parent.mkdir(parents=True, exist_ok=True)

@@ -1,3 +1,19 @@
+# Run summary (proprioception grasp/release snap — the last refinement)
+
+**Gold result (SO-101 pick-place grasp/release boundaries, deterministic, zero API):** recall@±5
+**0.174 (4/23, MAE 3.75) without** the snap → **0.130 (3/23, MAE 3.33) with** it at a small
+window; a window sweep (5→12) on both `observation.state` and `action` stays ≤ baseline. It does
+**not** improve recall, because the SO-101 gold is S0-anchored, not gripper-aligned (the actual
+gripper close is frame ~169 while the gold marks 159/174 and the grounded grasp-onset sits at 82).
+**So the snap is OFF by default** (`segmentation.snap_contact`) — kept available for gripper-aligned
+ground truth; it no-ops cleanly on pour/fold where the gripper holds. **Grasp/release timing is the
+documented precision limit**: two independent refinement attempts (VLM dense-window, deterministic
+gripper snap) didn't move it. **New API spend: $0** (validation reused existing annotations + dataset
+reads). GIF re-rendered for the requested cosmetics only (caption removed, larger video panels) —
+not for the snap. 137 tests pass, ruff clean. `snap.py`, `eval_snap.py`, CLAIMS row 25.
+
+---
+
 # Run summary (gallery-review cleanup)
 
 **Changed:** population stats are now **corpus-relative** — novelty + curation/speed tiers are pooled

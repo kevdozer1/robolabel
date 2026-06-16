@@ -220,6 +220,11 @@ speed:
 curation:
   min_population: 15
 
+# Proprioception-fused grasp/release snap (robolabel/snap.py; no VLM). Snap a grasp/release-onset
+# boundary to the nearest gripper transition within this many frames; no-op if none in-window.
+snap:
+  window: 8
+
 gate:
   # A collapsed score distribution (e.g. every episode scored 5) is a red flag that
   # the VLM is not discriminating. Flag when distinct quality scores are too few.

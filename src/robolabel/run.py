@@ -38,7 +38,8 @@ DEFAULTS: dict[str, Any] = {
         "seed": 0,
     },
     "modules": {
-        "segmentation": {"enabled": True, "strategy": "grounded", "vocabulary": "open"},
+        "segmentation": {"enabled": True, "strategy": "grounded", "vocabulary": "open",
+                         "snap_contact": False},   # off by default (didn't improve gold recall)
         "quality":      {"enabled": True},
         "speed":        {"enabled": False, "cuts": [0.3333, 0.6667]},
         "subgoals":     {"enabled": False, "retrieval": False, "retrieval_method": "embedding"},
@@ -167,6 +168,15 @@ def run_pipeline(config: RunConfig, *, source=None, provider=None, rubric=None,
         actions_by_ep, action_names = load_actions(dcfg["target"])
     detected = (detect_lerobot(source, action_names) if is_lerobot
                 else detect_directory(dcfg.get("directory_config")))
+    # optional proprioception-fused grasp/release snap (off by default — see snap.py / CLAIMS).
+    snap_on = bool(mods["segmentation"].get("snap_contact"))
+    states_by_ep: dict = {}
+    state_gd = None
+    if is_lerobot and snap_on:
+        from .control import load_states
+        from .snap import gripper_dim
+        states_by_ep, snames = load_states(dcfg["target"])
+        state_gd = gripper_dim(snames, next(iter(states_by_ep.values())).shape[1] if states_by_ep else 6)
 
     if provider is None:
         from .providers.base import build_provider
@@ -193,6 +203,13 @@ def run_pipeline(config: RunConfig, *, source=None, provider=None, rubric=None,
                 res = segment_episode(ep, provider, rubric, strategy, rdir)
                 subtasks = res.segments
                 seg_cost += sum(c.estimated_cost_usd or 0 for c in res.calls)
+                if snap_on and state_gd is not None and ep.episode_id in states_by_ep:
+                    from .snap import snap_contact_boundaries
+                    gbcfg = rubric.gripper_baseline
+                    subtasks, _ = snap_contact_boundaries(
+                        subtasks, states_by_ep[ep.episode_id][:, state_gd], window=rubric.snap_window,
+                        threshold=gbcfg.get("gripper_norm_threshold", 0.5),
+                        min_spacing=gbcfg.get("min_transition_frames", 8))
             if "quality" in on:
                 mres = label_metadata(ep, provider, rubric, rdir)
                 metadata = mres.metadata

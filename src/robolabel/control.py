@@ -125,3 +125,28 @@ def load_actions(repo_id: str, root: str | Path | None = None) -> tuple[dict, li
             for ep_idx, grp in frames.groupby("episode_index"):
                 out[str(int(ep_idx))] = np.stack(grp.sort_values(order)["action"].to_numpy())
     return out, names
+
+
+def load_states(repo_id: str, root: str | Path | None = None) -> tuple[dict, list[str] | None]:
+    """Read per-episode ``observation.state`` arrays + feature names (the physical gripper signal
+    for grasp/release snapping). Dataset read only — no network if cached."""
+    import json
+
+    import pandas as pd
+    base = Path(root) if root else Path(os.path.expanduser(f"~/.cache/huggingface/lerobot/{repo_id}"))
+    names = None
+    info = base / "meta" / "info.json"
+    if info.exists():
+        feat = json.loads(info.read_text(encoding="utf-8")).get("features", {}).get("observation.state", {})
+        names = feat.get("names")
+        if isinstance(names, dict):
+            names = next((v for v in names.values() if isinstance(v, list)), None)
+    files = sorted(glob.glob(str(base / "data" / "**" / "*.parquet"), recursive=True))
+    out: dict = {}
+    if files:
+        frames = pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
+        if "observation.state" in frames.columns:
+            order = "frame_index" if "frame_index" in frames.columns else frames.columns[0]
+            for ep_idx, grp in frames.groupby("episode_index"):
+                out[str(int(ep_idx))] = np.stack(grp.sort_values(order)["observation.state"].to_numpy())
+    return out, names

@@ -157,6 +157,10 @@ class Rubric:
     def curation_min_population(self) -> int:
         return int(self.data.get("curation", {}).get("min_population", 15))
 
+    @property
+    def snap_window(self) -> int:
+        return int(self.data.get("snap", {}).get("window", 8))
+
 
 def _fill(template: str, **values: object) -> str:
     """Substitute ``{key}`` placeholders without touching literal JSON braces.
