@@ -57,9 +57,25 @@ def _thumb(arr, w=THUMB_W, h=THUMB_H):
     return Image.fromarray(np.asarray(arr).astype("uint8")).convert("RGB").resize((w, h))
 
 
+def _read_frames(path):
+    """Read all frames of an mp4 with whichever imageio video backend is installed.
+
+    Tries FFMPEG (from `imageio[ffmpeg]`), then pyav (from `imageio[pyav]`, or pulled in by
+    lerobot), then imageio's auto-selection — so the demo works under either install path.
+    """
+    last = None
+    for plugin in ("FFMPEG", "pyav", None):
+        try:
+            kwargs = {"plugin": plugin} if plugin else {}
+            return np.stack([np.asarray(f) for f in iio.imiter(path, **kwargs)])
+        except Exception as exc:  # try the next backend
+            last = exc
+    raise RuntimeError(f"Could not read {path}; install imageio[ffmpeg] or imageio[pyav]. Last error: {last}")
+
+
 def load_panel(name):
     meta = json.loads((HERE / f"{name}.json").read_text(encoding="utf-8"))
-    frames = np.stack([np.asarray(f) for f in iio.imiter(HERE / "clips" / f"{name}.mp4", plugin="pyav")])
+    frames = _read_frames(HERE / "clips" / f"{name}.mp4")
     a = np.asarray(meta["actions"], dtype="float64")
     er = a.max(0) - a.min(0)
     groups = component_groups(meta["action_names"], a.shape[1], meta.get("gripper_groups") or CM["groups"],

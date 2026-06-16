@@ -104,10 +104,23 @@ class _VideoReader:
                 import imageio.v3 as iio
             except ImportError as exc:
                 raise RuntimeError(
-                    f"Reading {self.path.name} needs imageio with ffmpeg. Install it with "
+                    f"Reading {self.path.name} needs imageio with a video backend. Install it with "
                     "`pip install 'imageio[ffmpeg]'`, or pre-extract frames into a folder."
                 ) from exc
-            self._frames = [np.asarray(f) for f in iio.imiter(self.path, plugin="pyav")]
+            # Try whichever video backend is installed: FFMPEG (imageio[ffmpeg]), then pyav, then auto.
+            last: Exception | None = None
+            for plugin in ("FFMPEG", "pyav", None):
+                try:
+                    kwargs = {"plugin": plugin} if plugin else {}
+                    self._frames = [np.asarray(f) for f in iio.imiter(self.path, **kwargs)]
+                    break
+                except Exception as exc:  # try the next backend
+                    last = exc
+            if self._frames is None:
+                raise RuntimeError(
+                    f"Could not read {self.path.name} with any imageio video backend; install "
+                    f"`imageio[ffmpeg]` or `imageio[pyav]`. Last error: {last}"
+                ) from last
         return self._frames
 
     @property
