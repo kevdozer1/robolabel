@@ -7,7 +7,7 @@ other.
 
 ## `annotations.parquet` (VLM output)
 
-Schema version: **`robolabel/annotations/v5`** (stored in every row's
+Schema version: **`robolabel/annotations/v6`** (stored in every row's
 `schema_version` column; bump it on any breaking change). Long format — one row
 per record, three record types per episode.
 
@@ -27,8 +27,15 @@ annotate pass.
 **v5** adds five episode-level **curation** columns, all deterministic (no VLM):
 `speed` (`fast`/`medium`/`slow` bin) + `speed_norm` (the underlying scalar),
 `novelty`, and `curation_value` / `curation_tier`. Written by the `robolabel run`
-modules (`speed.py`, `novelty.py`, `curation.py`). Still purely additive — **v1..v4
-files still read**.
+modules (`speed.py`, `novelty.py`, `curation.py`). **v6** adds the continuous,
+phase-agnostic motion descriptor `active_frames` / `active_seconds` /
+`active_fraction` (the primary speed signal, motion-defined). Two semantics notes
+that travel with these: (1) the **raw** continuous fields (`speed_norm`, `novelty`,
+`curation_value`, `active_*`) are always emitted; (2) the **tier** fields (`speed`,
+`curation_tier`) are **corpus-relative and guarded** — pooled across all
+episodes/categories with global thresholds, and left **null** ("insufficient
+population to tier") on a population too small or homogeneous to tier honestly,
+rather than fabricating bands. Still purely additive — **v1..v5 files still read**.
 
 | column | type | record types | meaning |
 |---|---|---|---|
@@ -54,11 +61,14 @@ files still read**.
 | `control_mode` | str? | episode_metadata | legacy strategy metadata if provided (superseded by `control_modality`) |
 | `control_modality` | str? | episode_metadata | **v4**; `joint`/`end-effector` — the action **coordinate frame** (joint targets vs Cartesian poses), from the action feature names. NOT gripper involvement |
 | `reason` | str? | episode_metadata | the VLM's stated evidence |
-| `speed` | str? | episode_metadata | **v5**; `fast`/`medium`/`slow` pace bin vs the dataset (deterministic) |
-| `speed_norm` | float? | episode_metadata | **v5**; the underlying scalar (mean per-step action velocity) |
-| `novelty` | float? | episode_metadata | **v5**; per-episode novelty = mean distance to nearest neighbours in a frame embedding (deterministic) |
-| `curation_value` | float? | episode_metadata | **v5**; `f(quality, novelty)` in [0,1], weights from the run config |
-| `curation_tier` | str? | episode_metadata | **v5**; value-tiered overlay: `full`/`reduced`/`minimal` (compress) or `keep`/`cut` (top-cut). Never deletes data |
+| `speed` | str? | episode_metadata | **v5**; `fast`/`medium`/`slow` tier — **corpus-relative** (pooled, guarded); **null** when the population is too small/homogeneous to tier |
+| `speed_norm` | float? | episode_metadata | **v5**; raw scalar: mean per-step action velocity |
+| `novelty` | float? | episode_metadata | **v5**; raw: mean distance to nearest neighbours in a frame embedding (corpus-pooled when rescored); higher = rarer |
+| `curation_value` | float? | episode_metadata | **v5**; raw `f(quality, novelty)` in [0,1], weights from the run config — always emitted |
+| `curation_tier` | str? | episode_metadata | **v5**; value-tiered overlay `full`/`reduced`/`minimal` (or `keep`/`cut`), **corpus-relative + guarded**; **null** = "insufficient population to tier". Never deletes data |
+| `active_frames` | int? | episode_metadata | **v6**; frames from motion onset to offset — **motion-defined, phase-agnostic** (not tied to named phases) |
+| `active_seconds` | float? | episode_metadata | **v6**; `active_frames / fps` |
+| `active_fraction` | float? | episode_metadata | **v6**; `active_frames / num_frames` |
 | `subgoal_frame_idx` | int? | subgoal | frame index of the **real** end-of-sub-step subgoal (ground truth) |
 | `subgoal_image_path` | str? | subgoal | extracted PNG path (if `--no-images` not set) |
 | `retrieved_subgoal_episode_id` | str? | subgoal | **v4**; episode the retrieved (same-phase) subgoal came from; null if none |

@@ -16,8 +16,8 @@ from robolabel.schema import episode_records, list_episode_ids, read_annotations
 def _episodes(n_eps: int = 5, n_frames: int = 40, dim: int = 6) -> list[Episode]:
     eps = []
     for k in range(n_eps):
-        color = np.uint8((k * 40) % 255)
-        arr = np.full((48, 64, 3), color, dtype=np.uint8)
+        # structured (non-flat) frames that differ per episode -> distinct embeddings -> novelty spread
+        arr = (np.random.default_rng(100 + k).random((48, 64, 3)) * 255).astype(np.uint8)
         rng = np.random.default_rng(k)
         # different motion scale per episode -> speed + novelty have spread
         actions = np.cumsum(rng.standard_normal((n_frames, dim)) * (0.05 + 0.05 * k), axis=0).astype("float32")
@@ -82,7 +82,9 @@ def test_everything_on_run_offline(tmp_path: Path):
         "subgoals": {"enabled": True, "retrieval": True, "retrieval_method": "random"},
         "control": {"enabled": True, "active_dof": True},
         "novelty": {"enabled": True, "k": 3},
-        "curation": {"enabled": True, "compress": True, "weights": {"quality": 0.5, "novelty": 0.5}},
+        # lower the tier guard so a 5-ep offline run still exercises tiering
+        "curation": {"enabled": True, "compress": True, "weights": {"quality": 0.5, "novelty": 0.5},
+                     "min_population": 3},
     }}
     res, _ = _run(cfg, tmp_path)
     assert res["episodes"] == 5 and not res["failures"]
@@ -92,6 +94,8 @@ def test_everything_on_run_offline(tmp_path: Path):
     assert all(m.get("novelty") is not None for m in metas)
     assert all(m.get("curation_value") is not None for m in metas)
     assert all(m.get("curation_tier") in ("full", "reduced", "minimal") for m in metas)
+    # continuous, phase-agnostic speed descriptor always emitted
+    assert all(m.get("active_frames") is not None and m.get("active_fraction") is not None for m in metas)
     # retrieval ran and respected the gate: the mock makes uniform-split segments (a failure
     # band), so NO episode is gate-passed and nothing may be retrieved from -> all null.
     # (Positive retrieval is covered in test_retrieve::test_retrieve_only_from_allowed_sources.)
@@ -101,6 +105,20 @@ def test_everything_on_run_offline(tmp_path: Path):
     # active_dof present on subtasks
     subs = episode_records(df, "0")["subtasks"]
     assert all(s.get("active_dof") in ("arm", "gripper", "both", "none") for s in subs)
+
+
+def test_tier_guard_on_small_run(tmp_path: Path):
+    # default guard (rubric min_population=15): a 5-ep run is too small -> tiers null, raw kept
+    cfg = {"modules": {"novelty": {"enabled": True, "k": 3},
+                       "speed": {"enabled": True},
+                       "curation": {"enabled": True, "compress": True}}}
+    res, _ = _run(cfg, tmp_path)
+    df = read_annotations(res["out"])
+    metas = [episode_records(df, e)["metadata"] for e in list_episode_ids(df)]
+    assert all(m.get("curation_value") is not None for m in metas)        # raw value kept
+    assert all(m.get("curation_tier") is None for m in metas)             # insufficient -> null
+    assert all(m.get("speed") is None for m in metas)                     # tier null; active_* still emitted
+    assert all(m.get("active_frames") is not None for m in metas)
 
 
 def _allnull(df, col) -> bool:

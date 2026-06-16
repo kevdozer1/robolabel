@@ -14,4 +14,4 @@ __version__ = "0.1.0"
 # stored alongside the real same-episode keyframe, never replacing it). v5 adds episode-level
 # curation signals: `speed`/`speed_norm` (deterministic metadata), `novelty`, and
 # `curation_value`/`curation_tier`. Additive: v1..v4 files still read — absent columns null.
-SCHEMA_VERSION = "robolabel/annotations/v5"
+SCHEMA_VERSION = "robolabel/annotations/v6"

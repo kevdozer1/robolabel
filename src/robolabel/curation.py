@@ -38,18 +38,28 @@ def curation_values(quality_by_ep: dict[str, float | None], novelty_by_ep: dict[
     return out
 
 
-def assign_tiers(values: dict[str, float], *, compress: bool = False,
-                 top_cut: float | None = None) -> dict[str, str | None]:
-    """compress -> full/reduced/minimal by value tercile; else top_cut -> keep/cut; else None."""
-    if not values:
-        return {}
+def tierable(values: dict[str, float], min_population: int = 15, min_spread: float = 0.08) -> bool:
+    """Whether a population is large + heterogeneous enough to tier honestly (vs fabricating
+    tiers on a tiny same-y run). Needs >= min_population episodes and real value spread."""
+    if len(values) < min_population:
+        return False
     vals = list(values.values())
-    if compress:
-        if len(set(vals)) < 2:
-            return {e: "full" for e in values}
-        lo, hi = float(np.quantile(vals, 1 / 3)), float(np.quantile(vals, 2 / 3))
-        return {e: ("minimal" if v <= lo else "full" if v >= hi else "reduced") for e, v in values.items()}
+    return (max(vals) - min(vals)) >= min_spread and len(set(vals)) >= 3
+
+
+def assign_tiers(values: dict[str, float], *, compress: bool = False, top_cut: float | None = None,
+                 min_population: int = 15, min_spread: float = 0.08) -> dict[str, str | None]:
+    """compress -> full/reduced/minimal by value tercile; top_cut -> keep/cut; else None.
+
+    Corpus-relative + guarded: if the population is too small / too homogeneous to tier honestly
+    (``tierable`` is False), returns all-``None`` — the caller reports "insufficient population to
+    tier" and keeps the raw continuous ``curation_value``. Never fabricates tiers on a tiny run.
+    """
+    if not values or not tierable(values, min_population, min_spread):
+        return {e: None for e in values}
+    vals = list(values.values())
     if top_cut is not None:
         thr = float(np.quantile(vals, max(0.0, 1.0 - top_cut)))
         return {e: ("keep" if v >= thr else "cut") for e, v in values.items()}
-    return {e: None for e in values}
+    lo, hi = float(np.quantile(vals, 1 / 3)), float(np.quantile(vals, 2 / 3))
+    return {e: ("minimal" if v <= lo else "full" if v >= hi else "reduced") for e, v in values.items()}

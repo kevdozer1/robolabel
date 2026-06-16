@@ -29,6 +29,7 @@ COLUMNS: list[str] = [
     "quality", "task_success_quality", "mistake", "boundary_clarity", "control_mode",
     "control_modality", "reason",
     "speed", "speed_norm", "novelty", "curation_value", "curation_tier",
+    "active_frames", "active_seconds", "active_fraction",
     "subgoal_frame_idx", "subgoal_image_path",
     "retrieved_subgoal_episode_id", "retrieved_subgoal_frame_idx",
     "provider", "model", "strategy", "cost_usd", "receipt_path",
@@ -58,11 +59,15 @@ class EpisodeMetadata:
     control_modality: str | None = None     # v4: 'joint'|'end-effector' — the action COORDINATE FRAME (deterministic)
     reason: str = ""
     # v5: deterministic metadata + curation signals (no VLM).
-    speed: str | None = None                # 'fast'|'medium'|'slow' bin vs the dataset
-    speed_norm: float | None = None         # the underlying scalar (mean action velocity, normalized)
-    novelty: float | None = None            # distance to dataset (higher = more novel); per-episode
-    curation_value: float | None = None     # f(quality, novelty); weights in the run config
-    curation_tier: str | None = None        # 'full'|'reduced'|'minimal' (value-tiered overlay) or 'keep'/'cut'
+    speed: str | None = None                # 'fast'|'medium'|'slow' tier — corpus-relative; null if insufficient population
+    speed_norm: float | None = None         # raw scalar: mean per-step action velocity
+    novelty: float | None = None            # raw: distance to nearest neighbours (corpus-pooled); higher = more novel
+    curation_value: float | None = None     # raw: f(quality, novelty); weights in the run config
+    curation_tier: str | None = None        # 'full'|'reduced'|'minimal'/'keep'/'cut'; null if insufficient population
+    # v6: continuous, phase-agnostic motion descriptor (the primary speed signal).
+    active_frames: int | None = None        # frames from motion onset to offset (motion-defined, not phase-tied)
+    active_seconds: float | None = None      # active_frames / fps
+    active_fraction: float | None = None     # active_frames / num_frames
 
 
 @dataclass
@@ -112,7 +117,8 @@ class EpisodeAnnotation:
                          "control_mode": m.control_mode, "control_modality": m.control_modality,
                          "reason": m.reason, "speed": m.speed, "speed_norm": m.speed_norm,
                          "novelty": m.novelty, "curation_value": m.curation_value,
-                         "curation_tier": m.curation_tier,
+                         "curation_tier": m.curation_tier, "active_frames": m.active_frames,
+                         "active_seconds": m.active_seconds, "active_fraction": m.active_fraction,
                          "cost_usd": self.cost_usd, "receipt_path": receipt})
         for seg in self.subtasks:
             rows.append({**base, "record_type": "subtask", "segment_idx": seg.segment_idx,

@@ -138,7 +138,7 @@ def run_pipeline(config: RunConfig, *, source=None, provider=None, rubric=None,
         to_dataframe,
         write_annotations,
     )
-    from .speed import bin_speeds, episode_speed_norm
+    from .speed import active_window, bin_speeds, episode_speed_norm
 
     config.validate()
     rubric = rubric or load_rubric()
@@ -203,6 +203,11 @@ def run_pipeline(config: RunConfig, *, source=None, provider=None, rubric=None,
                 sn = episode_speed_norm(acts)
                 speed_norm[ep.episode_id] = sn
                 metadata.speed_norm = round(sn, 6)
+                mo = rubric.speed_motion
+                aw = active_window(acts, rel_threshold=mo["rel_threshold"], smooth=mo["smooth"])
+                metadata.active_frames = aw["active_frames"]
+                metadata.active_seconds = round(aw["active_frames"] / max(1e-6, ep.fps), 3)
+                metadata.active_fraction = aw["active_fraction"]
             subgoals = derive_subgoals(subtasks, ep.num_frames, rubric.subgoal_source) if ("subgoals" in on and subtasks) else []
             if "control" in on:
                 metadata = metadata or EpisodeMetadata()
@@ -228,8 +233,12 @@ def run_pipeline(config: RunConfig, *, source=None, provider=None, rubric=None,
     write_annotations(anns, out)
 
     # --- dataset-level pass -------------------------------------------------- #
+    # corpus-relative tier guard: min population to bin against (config override, else rubric).
+    min_pop = int(mods["curation"].get("min_population")
+                  or mods["speed"].get("min_population") or rubric.curation_min_population)
     if "speed" in on and speed_norm:
-        bins = bin_speeds(speed_norm, tuple(mods["speed"].get("cuts", [0.3333, 0.6667])))
+        bins = bin_speeds(speed_norm, tuple(mods["speed"].get("cuts", [0.3333, 0.6667])),
+                          min_population=min_pop)
         df["speed"] = df["speed"].astype("object")
         for eid, b in bins.items():
             df.loc[(df["episode_id"].astype(str) == eid) & (df["record_type"] == "episode_metadata"), "speed"] = b
@@ -250,7 +259,7 @@ def run_pipeline(config: RunConfig, *, source=None, provider=None, rubric=None,
         w = mods["curation"].get("weights", {})
         values = curation_values(quality_by_ep, novelty_by_ep, w.get("quality", 0.5), w.get("novelty", 0.5))
         tiers = assign_tiers(values, compress=bool(mods["curation"].get("compress")),
-                             top_cut=mods["curation"].get("top_cut"))
+                             top_cut=mods["curation"].get("top_cut"), min_population=min_pop)
         df["curation_value"] = df["curation_value"].astype("object")
         df["curation_tier"] = df["curation_tier"].astype("object")
         for eid, v in values.items():

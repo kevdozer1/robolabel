@@ -111,10 +111,13 @@ the baseline). Full writeup: [`STRATEGY_REPORT.md`](STRATEGY_REPORT.md).
 - **Quality scores: read with care.** The gold here is 49/50 "score 5", so a model that
   always says 5 scores 0.97–1.00 — above both Gemini Flash and Pro. The number that means
   something is the **catastrophic false-negative rate** (a human-5 scored ≤2, which would
-  silently filter good data): Flash 3/30, Pro **1/30**. On easy/uniform datasets like this,
-  quality is near-degenerate; the deterministic **`speed`** signal (mean action velocity, binned
-  fast/medium/slow) is usually the more informative episode metadata there. Quality + speed are
-  π0.7's two metadata signals — robolabel produces both.
+  silently filter good data): Flash 3/30, Pro **1/30**. **Uniform high scores on a clean,
+  same-y dataset are correct, not a bug** — quality discriminates on variable-quality corpora,
+  not on uniform ones, and robolabel never forces a spread. On such datasets the deterministic
+  **speed** descriptor (now a continuous, motion-defined `active_duration` — see below) is the
+  more informative episode metadata. Quality + speed are π0.7's two metadata signals — robolabel
+  produces both. (Per-issue quality flags — e.g. "gripper slip at frame N" — are a possible
+  future enhancement, not implemented.)
 - **The free baseline loses.** A proprioceptive segmenter from the gripper signal (no VLM,
   $0) scores 0.18–0.20 IoU — the VLM beats it by ~0.10–0.25, so the API cost buys something.
 - **Generalization (fresh dataset, paired).** On a second, never-touched dataset

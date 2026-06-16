@@ -50,11 +50,11 @@ modules:
 |---|---|---|---|---|
 | `segmentation` | episode | **on** | — | grounded `phase → target` subtasks. `vocabulary: open` (default) = `S2-open`; `closed` = `S2`; `strategy: baseline` = S0 |
 | `quality` | episode | **on** | — | episode quality 1–5 (VLM). Near-degenerate on easy datasets — see `speed` |
-| `speed` | episode→dataset | off | — | deterministic pace (mean action velocity) binned `fast`/`medium`/`slow` vs the dataset |
+| `speed` | episode→dataset | off | — | continuous, **motion-defined** `active_frames`/`active_seconds`/`active_fraction` (phase-agnostic) + raw `speed_norm`; a `fast`/`medium`/`slow` tier only when corpus-relative (else null) |
 | `subgoals` | episode→dataset | off | `segmentation` | real end-of-sub-step keyframe (pointer); `retrieval: true` adds a same-phase keyframe from another **gate-passed** episode (pointer). No image files written |
 | `control` | episode | off | `segmentation` | `control_modality` (joint vs end-effector coordinate frame); `active_dof: true` adds per-segment arm/gripper/both (optional, low-discrimination) |
 | `novelty` | dataset | off | — | deterministic per-episode novelty (distance to nearest neighbours in a cheap frame embedding) |
-| `curation` | dataset | off | `quality`, `novelty` | `curation_value = f(quality, novelty)`; `compress: true` assigns a fidelity tier (`full`/`reduced`/`minimal`); `top_cut: 0.2` marks `keep`/`cut`. Overlay only — never deletes |
+| `curation` | dataset | off | `quality`, `novelty` | raw `curation_value = f(quality, novelty)`; tiers (`full`/`reduced`/`minimal`, or `keep`/`cut`) are **corpus-relative + guarded** — assigned only when ≥ `min_population` heterogeneous episodes exist (else null, "insufficient population to tier"). Overlay only — never deletes |
 
 A module whose `requires` are not all enabled raises a clear error at validation. Everything is
 additive in the sidecar (schema v5); see [`SCHEMA.md`](SCHEMA.md). All deterministic modules

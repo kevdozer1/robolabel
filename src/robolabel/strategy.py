@@ -64,6 +64,7 @@ class StrategyConfig:
     max_label_attempts: int = 1       # re-prompts when grounded validation fails
     # post-passes
     refine_boundaries: bool = False   # S3+: dense-window per-boundary refinement
+    refine_contact_only: bool = False # restrict refinement to grasp/release (contact-event) boundaries
     refine_window: int = 15           # ±frames sent to the refinement call
     refine_max_frames: int = 25       # cap on frames per refinement contact sheet
     self_consistency_k: int = 1       # S4: number of label samples (median-combined)

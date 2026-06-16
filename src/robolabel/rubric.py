@@ -146,6 +146,17 @@ class Rubric:
     def active_dof_threshold(self) -> float:
         return float(self.data.get("control", {}).get("active_dof_threshold", 0.15))
 
+    # --- deterministic speed / corpus-relative tier guard ----------------- #
+    @property
+    def speed_motion(self) -> dict[str, float]:
+        s = self.data.get("speed", {})
+        return {"rel_threshold": float(s.get("motion_rel_threshold", 0.12)),
+                "smooth": int(s.get("motion_smooth", 5))}
+
+    @property
+    def curation_min_population(self) -> int:
+        return int(self.data.get("curation", {}).get("min_population", 15))
+
 
 def _fill(template: str, **values: object) -> str:
     """Substitute ``{key}`` placeholders without touching literal JSON braces.

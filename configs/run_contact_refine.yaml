@@ -1,0 +1,8 @@
+run:
+  dataset: { source: lerobot, target: lerobot/svla_so101_pickplace, camera_key: observation.images.up }
+  model:   { provider: gemini, name: gemini-2.5-flash }
+  probe:   { max_episodes: 8 }
+  out: run_out/pp_refine
+modules:
+  segmentation: { enabled: true, strategy: configs/s2open_contact_refine.json }
+  quality:      { enabled: false }

@@ -160,3 +160,42 @@ the vocabulary does not — which is exactly what S2-open is for.
   (SO-101 held-out 5/20 → 0/20; fresh 0/20).
 - **Pending the blind grading above:** boundary acceptance, phase accuracy, and evidence
   factual-accuracy on the fresh task. Until filled, the README treats these as not-yet-shown.
+
+# Segmentation cleanup round (gallery review)
+
+Re-probe: fresh everything-on runs on pick-place / pour / fold, ≤8 episodes each, Gemini 2.5
+Flash, new API spend ~$0.70 of the $3 ceiling.
+
+**(3a) Pour terminal-retract hallucination — fixed.** The open-vocab prompt had listed
+"retract" as a phase example and *presumed* "a final withdraw/retract phase"; the model duly
+appended a `retract gripper` to **8/8** pour episodes. After de-priming (removed the example,
+dropped the presumption, added "do NOT invent a retract you don't see"), only **3/8** pour
+episodes end on a wind-down phase, and those 3 are plausibly genuine post-pour withdrawals —
+the forced terminal retract is gone (5/8 now end on `pour water` / `release cup`).
+
+**(3b) Terminal over-segmentation — fixed (logic) + reduced (prompt).** `_dedupe_trailing_phases`
+only collapsed string-identical trailing phases; it now also collapses consecutive trailing
+**wind-down** phases with *different* labels (`withdraw gripper` + `retract arm` →
+one), by category (`_is_winddown`). On the re-probe, pick-place eps 1 & 7 produced a single clean
+`retract gripper` (the de-prime reduced the duplication); the collapse is the tested backstop.
+
+**(3c) Grasp/release dense-window refinement — one bounded attempt, NOT kept.** Added a
+`refine_contact_only` strategy flag (S3-style refinement restricted to grasp/release boundaries)
+and probed it on 8 pick-place episodes, scored against the human gold:
+
+| | boundary recall @±5 | precision @±5 | MAE (matched) |
+|---|---|---|---|
+| S2-open (no refinement) | **0.211** | 0.121 | 3.75 |
+| + contact-only refinement | **0.211** | 0.125 | 2.80 |
+
+Recall (the headline — did we land within ±5 of a human boundary at all) is **unchanged**; only
+the MAE on already-matched boundaries tightens modestly. It does **not clearly help**, so per the
+one-attempt rule it is **left off by default** (the flag remains available). **Grasp/release
+boundary timing is the known precision limit** of the grounded segmentation — the gold is itself
+S0-anchored, and a single refinement pass does not move the contact boundaries materially closer.
+
+**(3d) Long first/approach segment — investigated, no fix.** The first (approach) segment runs
+**~1.5× the even share on pick-place** (mean 0.31 vs an even 0.20) and only mildly on pour (0.24
+vs 0.22). The remaining segments keep moderate spread (CV ~0.4), so later boundaries are **not**
+severely compressed. Most of this is genuine approach-travel duration (the arm crosses the table)
+plus mild early under-segmentation — a tendency to note, not a pathology.

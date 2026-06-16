@@ -293,11 +293,33 @@ def _target_optional(phase: str, config: StrategyConfig) -> bool:
     return False
 
 
+def _is_winddown(phase: str | None) -> bool:
+    """True for any retract/withdraw/return/home-style terminal wind-down phase (by category)."""
+    p = (phase or "").lower()
+    return bool(p) and any(tok in p for tok in _RETRACT_LIKE)
+
+
+_CONTACT_TOKENS = ("grasp", "release", "place", "pick", "grip", "contact", "lift", "drop", "set down")
+
+
+def _is_contact_phase(phase: str | None) -> bool:
+    """True for grasp/release-style contact-event phases (the hard-to-time boundaries)."""
+    p = (phase or "").lower()
+    return bool(p) and any(tok in p for tok in _CONTACT_TOKENS)
+
+
 def _dedupe_trailing_phases(segs: list[SubtaskSegment]) -> list[SubtaskSegment]:
-    """Collapse consecutive identical *trailing* phases into one (e.g. two 'retract')."""
-    while len(segs) >= 2 and segs[-1].phase and segs[-1].phase == segs[-2].phase:
-        merged_end = segs[-1].end_frame
-        merged_target = segs[-2].target or segs[-1].target
+    """Collapse consecutive *trailing* phases that are either string-identical (two 'retract')
+    OR both wind-down-like with different labels (e.g. 'withdraw gripper' + 'retract arm') into
+    one segment spanning to the last frame. Keeps the earlier (first-observed) label."""
+    while len(segs) >= 2:
+        a, b = segs[-2], segs[-1]
+        same = bool(a.phase) and a.phase == b.phase
+        winddown = _is_winddown(a.phase) and _is_winddown(b.phase)
+        if not (same or winddown):
+            break
+        merged_end = b.end_frame
+        merged_target = a.target or b.target
         segs.pop()
         segs[-1].end_frame = merged_end
         segs[-1].target = merged_target
@@ -377,6 +399,10 @@ def _refine_boundaries(
     last = episode.num_frames - 1
     calls: list[ProviderResponse] = []
     for i in range(len(segments) - 1):
+        # contact-only mode: refine only grasp/release boundaries (the hard contact events)
+        if config.refine_contact_only and not (
+                _is_contact_phase(segments[i].phase) or _is_contact_phase(segments[i + 1].phase)):
+            continue
         boundary = segments[i].end_frame
         lo = max(0, boundary - config.refine_window)
         hi = min(last, boundary + config.refine_window)

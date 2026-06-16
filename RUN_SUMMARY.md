@@ -1,3 +1,25 @@
+# Run summary (gallery-review cleanup)
+
+**Changed:** population stats are now **corpus-relative** — novelty + curation/speed tiers are pooled
+across all datasets with global thresholds and a population guard (small/same-y runs emit raw scores +
+"insufficient population to tier" instead of fake bands); **speed** became a continuous, phase-agnostic
+`active_duration` (motion onset→offset, +`active_fraction`); the open-vocab prompt was de-primed of a
+hallucinated terminal retract and the trailing wind-down collapse now merges different-label retracts;
+a bounded grasp/release refinement was tried, didn't help (recall@±5 0.211→0.211 vs gold), so it's off
+by default with grasp/release timing documented as the precision limit (schema → v6; CLAIMS rows 17–24).
+**Pour hallucination:** the forced terminal `retract` dropped from **8/8 → 3/8** episodes (the 3 are
+plausibly real post-pour withdrawals).
+**Artifacts:** new eval GIF `docs/figures/grounded_annotations.gif` (3 fixed episodes; phase→target,
+quality, active_duration, real keyframes "selected — not generated", action coordinate frame) and
+`PRICE_EFFICIENCY.md` (deterministic modules are free → full-stack ≈ minimal; Pro's 4× buys only quality;
+~$20–28 / 1,000 eps on Flash, ~$6–10 with batch+caching).
+**State:** 132 tests pass, ruff clean, new API spend **$0.70 / $3**; `main` pushed.
+**One thing left for you:** eyeball the new GIF + `robolabel gallery --config gallery.json` to sign off the
+labels read right — and decide whether the grasp/release precision ceiling is worth a future
+proprioception-fused (non-VLM) refinement pass, since the VLM dense-window attempt didn't move it.
+
+---
+
 # Run summary (unified evaluation gallery)
 
 A unified evaluation **gallery** now shows every module's output across all tasks in one place,

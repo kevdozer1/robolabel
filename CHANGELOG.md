@@ -2,6 +2,17 @@
 
 ## 0.2.0 (unreleased) — cross-task generalization + open vocabulary
 
+- **Gallery-review cleanup (schema v6).** Population stats are now **corpus-relative**: novelty +
+  curation/speed **tiers** are pooled across all datasets with global thresholds and a population
+  guard — a small/same-y run emits the raw continuous score + "insufficient population to tier"
+  instead of fabricating ultra-narrow bands (`corpus.py`, `curation.tierable`). **`speed`** became a
+  continuous, phase-agnostic **`active_duration`** (motion onset→offset frames/seconds +
+  `active_fraction`); the categorical tier is corpus-relative only. The open-vocab prompt was
+  **de-primed of a hallucinated terminal retract** (pour: 8/8 → 3/8 episodes) and the trailing
+  wind-down collapse now merges different-label retracts. A bounded grasp/release dense-window
+  refinement was tried (`refine_contact_only`), didn't move boundaries vs gold (recall@±5
+  0.211→0.211), so it's **off by default** with grasp/release timing documented as the precision
+  limit. New `PRICE_EFFICIENCY.md`; updated eval GIF. CLAIMS rows 17–24.
 - **Config-driven modular pipeline (`robolabel run --config run.yaml`).** One YAML drives a
   module registry; the minimal default runs **segmentation + quality** with **open-vocab grounded**
   segmentation as the default (closed-vocab `S2` stays available). Independently-toggleable modules:

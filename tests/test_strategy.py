@@ -164,6 +164,20 @@ def test_terminal_phase_dedupe_collapses_double_retract():
     assert segs[-1].start_frame == 21                  # and starts where the first retract did
 
 
+def test_terminal_winddown_collapses_different_labels():
+    # The open-vocab failure: two DIFFERENT wind-down labels ("withdraw gripper" + "retract arm")
+    # — exact-string dedupe misses these; the semantic/category collapse merges them.
+    raw = {"segments": [
+        {"phase": "grasp corner", "target": "the towel", "end_frame": 10, "evidence": "e", "subtask_text": "x"},
+        {"phase": "fold over", "target": "the towel", "end_frame": 20, "evidence": "e", "subtask_text": "y"},
+        {"phase": "withdraw gripper", "end_frame": 26, "evidence": "e", "subtask_text": "pull back"},
+        {"phase": "retract arm", "end_frame": 30, "evidence": "e", "subtask_text": "move away"},
+    ]}
+    segs = validate_grounded_segments(raw, 31, _S2O, _RUBRIC)
+    assert [s.phase for s in segs] == ["grasp corner", "fold over", "withdraw gripper"]
+    assert segs[-1].end_frame == 30 and segs[-1].start_frame == 21
+
+
 def test_schema_v3_target_roundtrips(tmp_path: Path):
     # A v3 annotation with targets writes and reads back the target column intact.
     ann = EpisodeAnnotation(

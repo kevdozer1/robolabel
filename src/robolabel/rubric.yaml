@@ -156,18 +156,22 @@ strategies:
     For each subtask return:
       - "phase": a SHORT free-text name for what the arm is doing in this phase, chosen to
         fit THIS task — 1 to 3 words, verb-led (e.g. "approach cup", "tilt to pour",
-        "grasp corner", "fold flap", "wipe surface", "retract"). Do NOT force the action into
+        "grasp corner", "fold flap", "wipe surface"). Do NOT force the action into
         a fixed list; name what you actually see.
       - "target": the SPECIFIC object or destination this subtask acts on, named from the
         scene — e.g. "cup", "the bowl", "left sleeve", "near corner". When several similar
-        objects are present you MUST disambiguate which one. Required for every phase EXCEPT a
-        final withdraw/retract phase with no object, where "none" is allowed.
+        objects are present you MUST disambiguate which one. Use "none" only for a phase that
+        genuinely acts on no object.
       - "end_frame": the integer frame index (from the captions above) where this
         subtask ends and the next begins — choose the frame where the transition
         is actually visible, not an even division of the episode
       - "evidence": one short clause naming the visible event at that boundary
         (e.g. "liquid starts leaving the cup", "cloth edge meets the opposite edge")
       - "subtask_text": a short action phrase naming the object/destination
+    Do NOT assume any phase exists that you cannot see in the frames. In particular, do NOT
+    append a terminal "retract" / "withdraw" / wind-down phase at the end unless the arm
+    VISIBLY moves away from the workspace and stops in the final frames — many episodes simply
+    end mid- or post-action with no separate retract. Only segment phases actually visible.
     Boundaries must be strictly increasing frame indices, contiguous, and cover
     the whole episode (frames 0 through {last_frame}). Do not return a single
     segment. Do not place boundaries at uniform fractions of the duration.
@@ -204,6 +208,17 @@ gripper_baseline:
 # full-episode range.
 control:
   active_dof_threshold: 0.15
+
+# Deterministic speed descriptor (robolabel/speed.py; no VLM). The active window is motion-defined
+# (phase-agnostic): action velocity above motion_rel_threshold * the episode's 90th-pct velocity.
+speed:
+  motion_rel_threshold: 0.12
+  motion_smooth: 5
+
+# Population guard for corpus-relative tiers (curation/speed). Tiers are only assigned when at
+# least this many episodes (pooled across the corpus) with real spread exist; else left null.
+curation:
+  min_population: 15
 
 gate:
   # A collapsed score distribution (e.g. every episode scored 5) is a red flag that
