@@ -79,10 +79,12 @@ run_out/
 *_SUMMARY.md
 RUN_*.md
 
-# Internal prose docs. The docs/ folder is internal; only the figures the README
-# embeds are kept tracked.
+# Internal prose docs. The docs/ folder is internal; only the one figure the README
+# embeds (the GIF) is kept tracked.
 /docs/*
 !/docs/figures/
+/docs/figures/*
+!/docs/figures/grounded_annotations.gif
 
 # Tests and helper/build scripts — not part of the installed package.
 /tests/

@@ -28,7 +28,7 @@ jobs:
       - name: Lint
         run: ruff check src
 
-      - name: Offline demo (integration smoke, must finish fast with no API key)
+      - name: Offline demo (integration check, must finish fast with no API key)
         run: |
           robolabel demo --out ci_demo_out --episodes 3
           test -f ci_demo_out/annotations.parquet
