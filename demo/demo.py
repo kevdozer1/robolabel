@@ -65,7 +65,7 @@ def load_panel(name):
     groups = component_groups(meta["action_names"], a.shape[1], meta.get("gripper_groups") or CM["groups"],
                               CM["default_group"])
     active = [segment_active_groups(a, s["start"], min(s["end"], len(a) - 1), groups, er,
-                                    CM["threshold"], CM["edge"]) for s in meta["segments"]]
+                                    CM["threshold"], CM["smooth"]) for s in meta["segments"]]
     return {**meta, "frames": frames, "nf": len(frames), "active": active}
 
 

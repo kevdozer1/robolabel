@@ -12,11 +12,13 @@ Two INDEPENDENT axes that are easy to conflate:
   segment, e.g. ``"arm"``, ``"gripper"``, ``"arm+gripper"``, or ``"none"``. Groups are auto-derived
   from the action feature names and generalize to N configurable groups (the default splits the
   gripper out and calls the remainder ``arm``; a dataset with no gripper-named dim simply has no
-  gripper group). A group is active iff any of its dims changes by more than a motion threshold of
-  that dim's full-episode range, measured as the **net displacement** between the stable start and
-  end of the segment. Net (not range) is deliberate: a gripper merely HOLDING a fixed position, or
-  jittering and returning, is not "moving" — only a real grasp/release (a lasting open/close
-  change) counts. A separate, non-pi0.7 descriptor.
+  gripper group). A group is active iff any of its dims moves through more than a motion threshold
+  of that dim's full-episode range within the segment, measured as the **smoothed within-segment
+  range** (its excursion). Using the range rather than the net start-to-end displacement is
+  deliberate: it catches any real actuation, so a gripper that closes to grasp and one that opens
+  to release and then recloses both register. A light moving-average (window ``motion_smooth``)
+  rejects single-frame jitter, and a gripper merely HOLDING a fixed position has near-zero range
+  and is not counted. A separate, non-pi0.7 descriptor.
 
 Everything here is a deterministic function of the action array and the feature names.
 """
@@ -88,24 +90,27 @@ def component_groups(action_names: list[str] | None, n_dims: int,
     return out
 
 
-def _net_motion(seg: np.ndarray, ep_range: np.ndarray, edge: int) -> np.ndarray:
-    """Per-dim |stable end - stable start| over a segment, normalized by the episode range.
+def _excursion(seg: np.ndarray, ep_range: np.ndarray, smooth: int) -> np.ndarray:
+    """Per-dim smoothed within-segment range, normalized by the episode range.
 
-    Start/end positions are averaged over ``edge`` frames at each end, so single-frame jitter
-    does not masquerade as motion and a value that wanders and returns reads ~0.
+    A moving-average (window ``smooth``) rejects single-frame jitter; the range (not the net
+    start-to-end displacement) counts any significant excursion, so a gripper that opens to
+    release and then recloses still registers as motion.
     """
-    e = max(1, min(edge, seg.shape[0] // 4))
-    return np.abs(seg[-e:].mean(axis=0) - seg[:e].mean(axis=0)) / np.maximum(ep_range, 1e-6)
+    if smooth > 1 and seg.shape[0] >= smooth:
+        k = np.ones(smooth) / smooth
+        seg = np.stack([np.convolve(seg[:, d], k, mode="valid") for d in range(seg.shape[1])], axis=1)
+    return (seg.max(axis=0) - seg.min(axis=0)) / np.maximum(ep_range, 1e-6)
 
 
 def segment_active_groups(actions: np.ndarray, start: int, end: int, groups: dict[str, list[int]],
-                          ep_range: np.ndarray, threshold: float, edge: int = 5) -> str:
+                          ep_range: np.ndarray, threshold: float, smooth: int = 5) -> str:
     """The set of component groups that move over [start, end] (inclusive), as a ``+``-joined,
     alphabetically-sorted string (e.g. ``"arm+gripper"``), or ``"none"``."""
     seg = actions[start:end + 1]
     if seg.shape[0] < 2:
         return "none"
-    m = _net_motion(seg, ep_range, edge)
+    m = _excursion(seg, ep_range, smooth)
     active = [name for name, dims in groups.items()
               if dims and max(float(m[d]) for d in dims) > threshold]
     return "+".join(sorted(active)) if active else "none"
@@ -114,7 +119,7 @@ def segment_active_groups(actions: np.ndarray, start: int, end: int, groups: dic
 def enrich_control(df, actions_by_ep: dict, action_names: list[str] | None, motion: dict):
     """Write control_modality (episode) + the active_dof set (per subtask) into a copy of ``df``.
 
-    ``motion`` is the rubric ``control_motion`` dict: ``{threshold, edge, groups, default_group}``.
+    ``motion`` is the rubric ``control_motion`` dict: ``{threshold, smooth, groups, default_group}``.
     """
     df = df.copy()
     for col in ("control_modality", "active_dof"):       # ensure object dtype for string writes
@@ -135,7 +140,7 @@ def enrich_control(df, actions_by_ep: dict, action_names: list[str] | None, moti
             s = int(df.at[idx, "start_frame"])
             e = min(int(df.at[idx, "end_frame"]), len(actions) - 1)
             df.at[idx, "active_dof"] = segment_active_groups(actions, s, e, groups, ep_range,
-                                                             motion["threshold"], motion["edge"])
+                                                             motion["threshold"], motion["smooth"])
     return df
 
 

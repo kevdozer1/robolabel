@@ -205,14 +205,16 @@ gripper_baseline:
 
 # Deterministic control annotations (robolabel/control.py; no VLM). active_dof is the SET of
 # component GROUPS that actually move over a segment. A group is active iff any of its action dims
-# changes by more than motion_threshold of that dim's full-episode range, measured as NET
-# displacement between the segment's stable start and end (motion_edge frames averaged at each end)
-# — so a gripper merely HOLDING a position is not "moving". Groups are auto-derived from the action
-# feature names and generalize to N groups; the default splits the gripper out (any dim named
-# "gripper") and calls the remainder "arm". A dataset with no gripper-named dim has no gripper group.
+# moves through more than motion_threshold of that dim's full-episode range, measured as the
+# smoothed within-segment range (its excursion; a moving-average of motion_smooth frames rejects
+# single-frame jitter). The range (not net start-to-end displacement) is used so a gripper that
+# opens to release and then recloses still counts; a gripper merely HOLDING has ~zero range and
+# does not. Groups are auto-derived from the action feature names and generalize to N groups; the
+# default splits the gripper out (any dim named "gripper") and calls the remainder "arm". A dataset
+# with no gripper-named dim has no gripper group.
 control:
-  motion_threshold: 0.20
-  motion_edge: 5
+  motion_threshold: 0.25
+  motion_smooth: 5
   groups:
     gripper: [gripper]
   default_group: arm

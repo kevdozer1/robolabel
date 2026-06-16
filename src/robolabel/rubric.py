@@ -145,8 +145,8 @@ class Rubric:
     @property
     def control_motion(self) -> dict[str, Any]:
         c = self.data.get("control", {})
-        return {"threshold": float(c.get("motion_threshold", 0.20)),
-                "edge": int(c.get("motion_edge", 5)),
+        return {"threshold": float(c.get("motion_threshold", 0.25)),
+                "smooth": int(c.get("motion_smooth", 5)),
                 "groups": dict(c.get("groups", {"gripper": ["gripper"]})),
                 "default_group": str(c.get("default_group", "arm"))}
 

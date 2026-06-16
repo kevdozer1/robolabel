@@ -32,11 +32,13 @@ annotate pass.
   nothing about motion.
 - **`active_dof`** is the **set of component groups that actually move** in a segment (`arm`,
   `gripper`, `arm+gripper`, `none`). It is **per-segment** and is *not* a pi0.7 field. A group is
-  active iff one of its dims has a **net displacement** over the segment above a threshold fraction
-  of that dim's full-episode range, so a gripper that merely **holds** a position is not counted
-  active; only a real grasp/release is. Groups are auto-derived from the action names and
-  generalize to N groups, with members named for components (`arm`, `gripper`, and so on), never
-  `joint`/`end-effector`.
+  active iff one of its dims moves through more than a threshold fraction of its full-episode range
+  within the segment, measured as the **smoothed within-segment range** (its excursion). Using the
+  range rather than net start-to-end displacement means a gripper that opens to release and then
+  recloses still counts, while a light moving-average rejects single-frame jitter and a gripper
+  that merely **holds** a position has near-zero range and is not counted. Groups are auto-derived
+  from the action names and generalize to N groups, with members named for components (`arm`,
+  `gripper`, and so on), never `joint`/`end-effector`.
 
 **v5** adds five episode-level **curation** columns, all deterministic (no VLM):
 `speed` (`fast`/`medium`/`slow` bin) + `speed_norm` (the underlying scalar),
@@ -67,7 +69,7 @@ rather than fabricating bands. Still purely additive — **v1..v5 files still re
 | `phase` | str? | subtask | **v2**; closed-vocabulary phase (S2+), e.g. `approach`/`grasp` |
 | `target` | str? | subtask | **v3**; grounded object/destination this subtask acts on (S2+), e.g. `red cube`; null for `retract` |
 | `boundary_evidence` | str? | subtask | **v2**; one-line visual evidence for the boundary (S1+) |
-| `active_dof` | str? | subtask | **v4**; the **set of component groups that move** over the segment, `+`-joined and sorted (`arm`, `gripper`, `arm+gripper`, `none`). Deterministic, from **net displacement** per dim (a held gripper is not "moving"). Groups auto-derived from action names; generalizes to N groups |
+| `active_dof` | str? | subtask | **v4**; the **set of component groups that move** over the segment, `+`-joined and sorted (`arm`, `gripper`, `arm+gripper`, `none`). Deterministic, from each dim's **smoothed within-segment range** (a held gripper has ~zero range; a release open-and-reclose still counts). Groups auto-derived from action names; generalizes to N groups |
 | `quality` | int? | episode_metadata | curation/training-usefulness, 1–5 |
 | `task_success_quality` | int? | episode_metadata | task-completion score, 1–5 |
 | `mistake` | bool? | episode_metadata | clear visible mistake |

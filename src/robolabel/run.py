@@ -238,7 +238,7 @@ def run_pipeline(config: RunConfig, *, source=None, provider=None, rubric=None,
                     for s in subtasks:
                         s.active_dof = segment_active_groups(aa, s.start_frame,
                                                              min(s.end_frame, len(acts) - 1), groups,
-                                                             er, cm["threshold"], cm["edge"])
+                                                             er, cm["threshold"], cm["smooth"])
             anns.append(EpisodeAnnotation(
                 episode_id=ep.episode_id, task=ep.task, num_frames=ep.num_frames, fps=ep.fps,
                 provider=provider.name, model=provider.model, metadata=metadata, subtasks=subtasks,
