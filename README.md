@@ -57,6 +57,22 @@ retract                     frames 169-199  "arm withdraws, gripper empty"
 
 See [`SCHEMA.md`](SCHEMA.md) for every output column.
 
+## Demo
+
+The three episodes in the figure above (pick-place, pour, fold) are bundled under [`demo/`](demo/)
+as real ~200-frame clips plus their grounded annotations, so you can see the output with no API key
+and no dataset download:
+
+```bash
+pip install -e '.[lerobot]'      # or: pip install -e . && pip install 'imageio[ffmpeg]'
+python demo/demo.py
+```
+
+It prints each episode's grounded annotation (the `phase → target` sub-steps, the deterministic
+per-segment active components, quality, motion-defined speed, and the selected subgoal frames) and
+regenerates the annotated figure at `demo/grounded_annotations.gif`. Separately, `robolabel demo`
+runs the whole pipeline on synthetic data with the mock provider.
+
 ## Providers & cost
 
 Model-agnostic: a provider is one file (subclass `VLMProvider`, call `register_provider`). Built in:

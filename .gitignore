@@ -93,3 +93,6 @@ RUN_*.md
 # Loose generated metric artifacts.
 /probe_metrics.json
 *_metrics.json
+
+# Demo output (regenerable by running demo/demo.py; the bundled clips + JSON are tracked).
+/demo/grounded_annotations.gif

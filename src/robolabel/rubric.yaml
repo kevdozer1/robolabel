@@ -211,7 +211,7 @@ gripper_baseline:
 # feature names and generalize to N groups; the default splits the gripper out (any dim named
 # "gripper") and calls the remainder "arm". A dataset with no gripper-named dim has no gripper group.
 control:
-  motion_threshold: 0.15
+  motion_threshold: 0.20
   motion_edge: 5
   groups:
     gripper: [gripper]

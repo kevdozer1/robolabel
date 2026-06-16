@@ -5,4 +5,5 @@
 *.jpeg binary
 *.parquet binary
 *.mp4 binary
+*.gif binary
 *.npy binary
