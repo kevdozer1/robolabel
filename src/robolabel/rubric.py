@@ -141,10 +141,14 @@ class Rubric:
     def gripper_baseline(self) -> dict[str, Any]:
         return dict(self.data.get("gripper_baseline", {}))
 
-    # --- deterministic control annotations (active_dof) ------------------- #
+    # --- deterministic control annotations (active_dof set) --------------- #
     @property
-    def active_dof_threshold(self) -> float:
-        return float(self.data.get("control", {}).get("active_dof_threshold", 0.15))
+    def control_motion(self) -> dict[str, Any]:
+        c = self.data.get("control", {})
+        return {"threshold": float(c.get("motion_threshold", 0.15)),
+                "edge": int(c.get("motion_edge", 5)),
+                "groups": dict(c.get("groups", {"gripper": ["gripper"]})),
+                "default_group": str(c.get("default_group", "arm"))}
 
     # --- deterministic speed / corpus-relative tier guard ----------------- #
     @property

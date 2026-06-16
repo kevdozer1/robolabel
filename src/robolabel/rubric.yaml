@@ -203,11 +203,19 @@ gripper_baseline:
   ee_pause_window: 40             # look this many frames before a gripper event for the arm pause
   min_segment_frames: 5           # drop boundaries that would make a segment shorter than this
 
-# Deterministic control annotations (robolabel/control.py; no VLM). active_dof marks a segment's
-# dof group "moved" when its per-dim range over the segment exceeds this fraction of the dim's
-# full-episode range.
+# Deterministic control annotations (robolabel/control.py; no VLM). active_dof is the SET of
+# component GROUPS that actually move over a segment. A group is active iff any of its action dims
+# changes by more than motion_threshold of that dim's full-episode range, measured as NET
+# displacement between the segment's stable start and end (motion_edge frames averaged at each end)
+# — so a gripper merely HOLDING a position is not "moving". Groups are auto-derived from the action
+# feature names and generalize to N groups; the default splits the gripper out (any dim named
+# "gripper") and calls the remainder "arm". A dataset with no gripper-named dim has no gripper group.
 control:
-  active_dof_threshold: 0.15
+  motion_threshold: 0.15
+  motion_edge: 5
+  groups:
+    gripper: [gripper]
+  default_group: arm
 
 # Deterministic speed descriptor (robolabel/speed.py; no VLM). The active window is motion-defined
 # (phase-agnostic): action velocity above motion_rel_threshold * the episode's 90th-pct velocity.

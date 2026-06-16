@@ -1,20 +1,24 @@
 """Deterministic, data-derived control annotations (no VLM, no inference).
 
-* ``control_modality`` (per episode) — the action **coordinate frame**: ``"joint"`` (the actions
-  are joint-position/velocity targets) vs ``"end-effector"`` (Cartesian end-effector poses),
-  decided from the **action feature names** (LeRobot stores them in ``meta/info.json``). This is
-  NOT about whether the gripper is involved — an SO-101 arm is joint control whether or not it
-  also actuates a gripper. Honest even when constant for a dataset (the SO-arms are all joint).
+Two INDEPENDENT axes that are easy to conflate:
 
-* ``active_dof`` (per grounded segment) — ``"arm" | "gripper" | "both" | "none"``: which dof
-  group moves over the segment (per-dim range normalized to the dim's full-episode range vs
-  ``rubric.yaml -> control.active_dof_threshold``). **Optional and off by default** (the run
-  config's ``control.active_dof``): on these pick/pour/fold tasks it is *low-discrimination* —
-  most manipulation segments move both the arm and the gripper, so it is mostly ``"both"`` and
-  carries little signal. Kept for datasets where arm-only vs gripper-only phases are meaningful.
+* ``control_modality`` (per EPISODE) — the action **coordinate frame**: ``"joint"`` (actions are
+  joint-position targets) vs ``"end-effector"`` (Cartesian poses), decided from the action feature
+  names (LeRobot stores them in ``meta/info.json``). Dataset-level and typically constant (an
+  SO-101 is joint control either way). This is pi0.7's control-modality field. It says nothing
+  about which parts move; it is NOT a motion signal.
 
-Nothing here is inferred by a model; it is a deterministic function of the action array and the
-feature names. See ``CLAIMS.md``.
+* ``active_dof`` (per SEGMENT) — the **set of component groups that actually move** over the
+  segment, e.g. ``"arm"``, ``"gripper"``, ``"arm+gripper"``, or ``"none"``. Groups are auto-derived
+  from the action feature names and generalize to N configurable groups (the default splits the
+  gripper out and calls the remainder ``arm``; a dataset with no gripper-named dim simply has no
+  gripper group). A group is active iff any of its dims changes by more than a motion threshold of
+  that dim's full-episode range, measured as the **net displacement** between the stable start and
+  end of the segment. Net (not range) is deliberate: a gripper merely HOLDING a fixed position, or
+  jittering and returning, is not "moving" — only a real grasp/release (a lasting open/close
+  change) counts. A separate, non-pi0.7 descriptor.
+
+Everything here is a deterministic function of the action array and the feature names.
 """
 from __future__ import annotations
 
@@ -61,22 +65,57 @@ def gripper_dims(action_names: list[str] | None, n_dims: int) -> list[int]:
     return [n_dims - 1] if n_dims > 0 else []
 
 
-def segment_active_dof(actions: np.ndarray, start: int, end: int, grip_dims: list[int],
-                       ep_range: np.ndarray, threshold: float) -> str:
-    """Classify which dof group moves over [start, end] (inclusive frames)."""
+def component_groups(action_names: list[str] | None, n_dims: int,
+                     groups_cfg: dict[str, list[str]] | None = None,
+                     default_group: str = "arm") -> dict[str, list[int]]:
+    """Map action dims to named component groups (generalizes to N configurable groups).
+
+    ``groups_cfg`` maps a group name to substring tokens; a dim joins the first group whose token
+    is in its (lowercased) feature name. Dims matching no named group fall into ``default_group``.
+    With no feature names, every dim falls into ``default_group`` (we never guess a gripper).
+    Empty groups are omitted, so a dataset with no gripper-named dim simply has no gripper group.
+    """
+    if n_dims <= 0:
+        return {}
+    groups_cfg = groups_cfg or {"gripper": ["gripper"]}
+    if not action_names or len(action_names) < n_dims:
+        return {default_group: list(range(n_dims))}
+    low = [str(x).lower() for x in action_names]
+    out: dict[str, list[int]] = {}
+    for i, nm in enumerate(low):
+        g = next((name for name, toks in groups_cfg.items() if any(t in nm for t in toks)), default_group)
+        out.setdefault(g, []).append(i)
+    return out
+
+
+def _net_motion(seg: np.ndarray, ep_range: np.ndarray, edge: int) -> np.ndarray:
+    """Per-dim |stable end - stable start| over a segment, normalized by the episode range.
+
+    Start/end positions are averaged over ``edge`` frames at each end, so single-frame jitter
+    does not masquerade as motion and a value that wanders and returns reads ~0.
+    """
+    e = max(1, min(edge, seg.shape[0] // 4))
+    return np.abs(seg[-e:].mean(axis=0) - seg[:e].mean(axis=0)) / np.maximum(ep_range, 1e-6)
+
+
+def segment_active_groups(actions: np.ndarray, start: int, end: int, groups: dict[str, list[int]],
+                          ep_range: np.ndarray, threshold: float, edge: int = 5) -> str:
+    """The set of component groups that move over [start, end] (inclusive), as a ``+``-joined,
+    alphabetically-sorted string (e.g. ``"arm+gripper"``), or ``"none"``."""
     seg = actions[start:end + 1]
     if seg.shape[0] < 2:
         return "none"
-    norm = (seg.max(0) - seg.min(0)) / np.maximum(ep_range, 1e-6)
-    moved = norm > threshold
-    arm_dims = [d for d in range(actions.shape[1]) if d not in grip_dims]
-    arm = bool(any(moved[d] for d in arm_dims))
-    grip = bool(any(moved[d] for d in grip_dims))
-    return "both" if (arm and grip) else "arm" if arm else "gripper" if grip else "none"
+    m = _net_motion(seg, ep_range, edge)
+    active = [name for name, dims in groups.items()
+              if dims and max(float(m[d]) for d in dims) > threshold]
+    return "+".join(sorted(active)) if active else "none"
 
 
-def enrich_control(df, actions_by_ep: dict, action_names: list[str] | None, threshold: float):
-    """Write control_modality (episode) + active_dof (per subtask) into a copy of ``df``."""
+def enrich_control(df, actions_by_ep: dict, action_names: list[str] | None, motion: dict):
+    """Write control_modality (episode) + the active_dof set (per subtask) into a copy of ``df``.
+
+    ``motion`` is the rubric ``control_motion`` dict: ``{threshold, edge, groups, default_group}``.
+    """
     df = df.copy()
     for col in ("control_modality", "active_dof"):       # ensure object dtype for string writes
         if col not in df.columns:
@@ -90,12 +129,13 @@ def enrich_control(df, actions_by_ep: dict, action_names: list[str] | None, thre
         if actions is None or len(actions) < 2:
             continue
         ep_range = actions.max(0) - actions.min(0)
-        grip = gripper_dims(action_names, actions.shape[1])
+        groups = component_groups(action_names, actions.shape[1], motion["groups"], motion["default_group"])
         sub_mask = (df["episode_id"].astype(str) == eid) & (df["record_type"] == "subtask")
         for idx in df[sub_mask].index:
             s = int(df.at[idx, "start_frame"])
             e = min(int(df.at[idx, "end_frame"]), len(actions) - 1)
-            df.at[idx, "active_dof"] = segment_active_dof(actions, s, e, grip, ep_range, threshold)
+            df.at[idx, "active_dof"] = segment_active_groups(actions, s, e, groups, ep_range,
+                                                             motion["threshold"], motion["edge"])
     return df
 
 

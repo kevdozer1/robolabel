@@ -24,6 +24,20 @@ v2, and v3 files still read** — absent columns are treated as null. The v4 fie
 are written by `robolabel enrich` (see `control.py` / `retrieve.py`), not by the
 annotate pass.
 
+`control_modality` and `active_dof` are **two independent axes**, easy to conflate:
+
+- **`control_modality`** is the action **coordinate frame**: `joint` (joint-angle targets) vs
+  `end-effector` (Cartesian poses), read from the action feature names. It is **dataset-level
+  and constant** (an SO-101 is `joint` either way) and is pi0.7's control-modality field. It says
+  nothing about motion.
+- **`active_dof`** is the **set of component groups that actually move** in a segment (`arm`,
+  `gripper`, `arm+gripper`, `none`). It is **per-segment** and is *not* a pi0.7 field. A group is
+  active iff one of its dims has a **net displacement** over the segment above a threshold fraction
+  of that dim's full-episode range, so a gripper that merely **holds** a position is not counted
+  active; only a real grasp/release is. Groups are auto-derived from the action names and
+  generalize to N groups, with members named for components (`arm`, `gripper`, and so on), never
+  `joint`/`end-effector`.
+
 **v5** adds five episode-level **curation** columns, all deterministic (no VLM):
 `speed` (`fast`/`medium`/`slow` bin) + `speed_norm` (the underlying scalar),
 `novelty`, and `curation_value` / `curation_tier`. Written by the `robolabel run`
@@ -53,7 +67,7 @@ rather than fabricating bands. Still purely additive — **v1..v5 files still re
 | `phase` | str? | subtask | **v2**; closed-vocabulary phase (S2+), e.g. `approach`/`grasp` |
 | `target` | str? | subtask | **v3**; grounded object/destination this subtask acts on (S2+), e.g. `red cube`; null for `retract` |
 | `boundary_evidence` | str? | subtask | **v2**; one-line visual evidence for the boundary (S1+) |
-| `active_dof` | str? | subtask | **v4**; `arm`/`gripper`/`both`/`none` — which dof group moves (deterministic). Optional/off by default; low-discrimination on pick/pour/fold (mostly `both`) |
+| `active_dof` | str? | subtask | **v4**; the **set of component groups that move** over the segment, `+`-joined and sorted (`arm`, `gripper`, `arm+gripper`, `none`). Deterministic, from **net displacement** per dim (a held gripper is not "moving"). Groups auto-derived from action names; generalizes to N groups |
 | `quality` | int? | episode_metadata | curation/training-usefulness, 1–5 |
 | `task_success_quality` | int? | episode_metadata | task-completion score, 1–5 |
 | `mistake` | bool? | episode_metadata | clear visible mistake |

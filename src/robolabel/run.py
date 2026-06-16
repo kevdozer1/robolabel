@@ -43,7 +43,7 @@ DEFAULTS: dict[str, Any] = {
         "quality":      {"enabled": True},
         "speed":        {"enabled": False, "cuts": [0.3333, 0.6667]},
         "subgoals":     {"enabled": False, "retrieval": False, "retrieval_method": "embedding"},
-        "control":      {"enabled": False, "active_dof": False},
+        "control":      {"enabled": False, "active_dof": True},   # active-component set now discriminates
         "novelty":      {"enabled": False, "k": 5},
         "curation":     {"enabled": False, "compress": False,
                          "weights": {"quality": 0.5, "novelty": 0.5}, "top_cut": None},
@@ -120,7 +120,7 @@ def run_pipeline(config: RunConfig, *, source=None, provider=None, rubric=None,
     """Execute the enabled modules. ``source``/``provider`` may be injected (tests/offline)."""
     import numpy as np
 
-    from .control import load_actions, segment_active_dof
+    from .control import component_groups, load_actions, segment_active_groups
     from .curation import assign_tiers, curation_values
     from .detect import detect_directory, detect_lerobot
     from .labelers.metadata import label_metadata
@@ -228,14 +228,17 @@ def run_pipeline(config: RunConfig, *, source=None, provider=None, rubric=None,
             subgoals = derive_subgoals(subtasks, ep.num_frames, rubric.subgoal_source) if ("subgoals" in on and subtasks) else []
             if "control" in on:
                 metadata = metadata or EpisodeMetadata()
-                metadata.control_modality = detected.control_space
+                metadata.control_modality = detected.control_space      # dataset-level coordinate frame
                 if mods["control"].get("active_dof") and acts is not None and len(acts) >= 2:
-                    er = np.asarray(acts).max(0) - np.asarray(acts).min(0)
-                    grip = detected.gripper_dims or [np.asarray(acts).shape[1] - 1]
+                    aa = np.asarray(acts)
+                    er = aa.max(0) - aa.min(0)
+                    cm = rubric.control_motion
+                    groups = component_groups(detected.action_names, aa.shape[1],
+                                              cm["groups"], cm["default_group"])
                     for s in subtasks:
-                        s.active_dof = segment_active_dof(np.asarray(acts), s.start_frame,
-                                                          min(s.end_frame, len(acts) - 1), grip, er,
-                                                          rubric.active_dof_threshold)
+                        s.active_dof = segment_active_groups(aa, s.start_frame,
+                                                             min(s.end_frame, len(acts) - 1), groups,
+                                                             er, cm["threshold"], cm["edge"])
             anns.append(EpisodeAnnotation(
                 episode_id=ep.episode_id, task=ep.task, num_frames=ep.num_frames, fps=ep.fps,
                 provider=provider.name, model=provider.model, metadata=metadata, subtasks=subtasks,

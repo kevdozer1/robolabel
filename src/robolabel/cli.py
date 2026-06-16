@@ -310,7 +310,7 @@ def _enrich(args) -> int:
             print("enrich --control needs --target (the dataset, to read the action stream).")
             return 2
         actions, names = load_actions(args.target)
-        df = enrich_control(df, actions, names, load_rubric().active_dof_threshold)
+        df = enrich_control(df, actions, names, load_rubric().control_motion)
         n = int((df["record_type"] == "subtask").sum())
         did.append(f"control_modality + active_dof ({n} segments; modality={df['control_modality'].dropna().unique().tolist()})")
     if args.retrieve_subgoals:

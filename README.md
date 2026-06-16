@@ -16,7 +16,7 @@ The annotation set mirrors the π0.7 data recipe (subtask language, episode qual
 subgoal images), with one change: subgoal keyframes are real frames retrieved from the dataset
 rather than world-model generations, which keeps the pipeline lightweight.
 
-![Grounded annotations on three tasks (pick-place, pour, fold): the current phase to target sub-step, a segment timeline with playhead, the episode quality, the real end-of-sub-step subgoal keyframes (selected, never generated), and the deterministic control line.](docs/figures/grounded_annotations.gif)
+![Grounded annotations on three tasks (pick-place, pour, fold): the current phase to target sub-step, a segment timeline with playhead, the episode quality, the real end-of-sub-step subgoal keyframes (selected, never generated), and the per-segment active components (which component groups actually move).](docs/figures/grounded_annotations.gif)
 
 > Subgoal keyframes are real frames selected from the episode; robolabel does not generate images.
 > The control line (`joint` or `end-effector`) is read from the action stream, not inferred.

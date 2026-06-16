@@ -46,7 +46,7 @@ class SubtaskSegment:
     phase: str | None = None       # closed-vocabulary phase label (S2+)
     evidence: str | None = None    # one-line visual evidence for the boundary (S1+)
     target: str | None = None      # v3: grounded object/destination ("red cube"); "phase -> target"
-    active_dof: str | None = None  # v4: 'arm'|'gripper'|'both'|'none' from action-dim change (deterministic)
+    active_dof: str | None = None  # v4: set of moving component groups, '+'-joined ('arm', 'gripper', 'arm+gripper', 'none'); deterministic net-displacement
 
 
 @dataclass
