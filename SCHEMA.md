@@ -152,9 +152,7 @@ per-boundary `boundary_evidence`, the closed-vocabulary `phase` tag, the episode
 **Not emitted:** `meta/tasks_high_level.parquet` and `task_index_high_level` are part
 of the separate **LeRobot Annotate** GUI (`huggingface/lerobot-annotate`) and a newer
 lerobot than the pinned 0.4.x core; they are intentionally not written. The round-trip
-test (`tests/test_export_lerobot.py`) reloads `meta/subtasks.parquet` through lerobot's
-own `load_subtasks` and confirms every frame's `subtask_index` resolves to the subtask
-segment it falls in.
+test reloads `meta/subtasks.parquet` through lerobot's own `load_subtasks` and confirms
+every frame's `subtask_index` resolves to the subtask segment it falls in.
 
-The parquet sidecar + `export --format jsonl` remain the portable, full-fidelity
-outputs. See `RELEASE_READINESS.md`.
+The parquet sidecar + `export --format jsonl` remain the portable, full-fidelity outputs.

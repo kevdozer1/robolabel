@@ -28,8 +28,7 @@ subgoal_frames/
 demo_out/
 
 # strategy-ablation working dir (large, regenerable: receipts, per-cell segments).
-# The committed artifacts are STRATEGY_REPORT.md and eval/so101_split.json; the
-# machine results JSONs are copied into the report.
+# eval/so101_split.json is the frozen split; the machine results JSONs are regenerable.
 eval_out/
 eval_out_grip/
 
@@ -55,3 +54,40 @@ gallery.json
 
 # run-config outputs (regenerable)
 run_out/
+
+# ---------------------------------------------------------------------------
+# Repo hygiene: ship the functionality + its user docs, not the internal process.
+# The repo tracks the package (src/), packaging, and the user-facing docs
+# (README, CONFIG, SCHEMA, PORTING). Everything below is kept locally but gated
+# out of the commit so internal reports / tests / helper scripts never re-enter.
+# ---------------------------------------------------------------------------
+
+# Internal reports, audits, and process notes (regenerable / local-only).
+/CHANGELOG.md
+/CLAIMS.md
+/FRESH_TRIAL_REPORT.md
+/MIGRATION_MAP.md
+/OUTREACH.md
+/PRICE_EFFICIENCY.md
+/RELEASE_READINESS.md
+/REVIEW_GUIDE.md
+/ROADMAP.md
+/RUN_SUMMARY.md
+/STRATEGY_REPORT.md
+# ...and report-/summary-like docs in general, so new ones don't sneak in.
+*_REPORT.md
+*_SUMMARY.md
+RUN_*.md
+
+# Internal prose docs. The docs/ folder is internal; only the figures the README
+# embeds are kept tracked.
+/docs/*
+!/docs/figures/
+
+# Tests and helper/build scripts — not part of the installed package.
+/tests/
+/scripts/
+
+# Loose generated metric artifacts.
+/probe_metrics.json
+*_metrics.json

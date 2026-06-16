@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  check:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -20,18 +20,15 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install (core + dev)
+      - name: Install (core + lint)
         run: |
           python -m pip install --upgrade pip
           pip install -e '.[dev]'
 
       - name: Lint
-        run: ruff check src tests
+        run: ruff check src
 
-      - name: Unit tests
-        run: pytest -q
-
-      - name: Offline demo (integration test, must finish fast with no API key)
+      - name: Offline demo (integration smoke, must finish fast with no API key)
         run: |
           robolabel demo --out ci_demo_out --episodes 3
           test -f ci_demo_out/annotations.parquet

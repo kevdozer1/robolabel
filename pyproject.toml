@@ -42,7 +42,6 @@ robolabel = "robolabel.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/kevdozer1/robolabel"
-"Technical report (does this help training?)" = "https://github.com/kevdozer1/robolabel/blob/main/docs/why.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/robolabel"]

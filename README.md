@@ -43,12 +43,11 @@ the model's stated reason is true:
 
 > _Capture your own:_ `robolabel inspect --data inspect_data/so101.json --source lerobot
 > --target lerobot/svla_so101_pickplace --camera-key observation.images.side`
-> (screenshot placeholder — see `REVIEW_GUIDE.md`).
+> (screenshot placeholder).
 
 **The gallery** (`robolabel gallery`) loads several task datasets into one task-grouped view —
 the grounded lane shown per task — so you can eyeball grounded across pick-place, stacking,
-pour, and fold in one page (`python scripts/make_gallery.py && robolabel gallery --config
-gallery.json`).
+pour, and fold in one page (`robolabel gallery --config gallery.json`).
 
 **The query path** (`robolabel query`) proves the labels are usable — e.g. *show me every
 grasp across the dataset* as a contact sheet:
@@ -97,7 +96,7 @@ runs the whole pipeline with no API key.
 Measured on `lerobot/svla_so101_pickplace` against a 50-episode human gold set (30 tune /
 20 held-out test). One caveat applies to every number: **one task family, one annotator's
 gold, and the gold was built by correcting the baseline's drafts** (so it slightly favors
-the baseline). Full writeup: [`STRATEGY_REPORT.md`](STRATEGY_REPORT.md).
+the baseline).
 
 - **Failure tail, eliminated.** Out of the box, **25% (5 of 20)** held-out episodes come
   back as a single "do the task" blob or as boundaries at uniform fifths of the duration.
@@ -123,15 +122,14 @@ the baseline). Full writeup: [`STRATEGY_REPORT.md`](STRATEGY_REPORT.md).
 - **Generalization (fresh dataset, paired).** On a second, never-touched dataset
   (`lerobot/svla_so100_stacking`, apache-2.0, no baseline-anchored gold), both strategies
   ran on the same 20 episodes: the baseline collapsed **8 of 20 (40%)** into degenerate or
-  uniform-fifths blobs; the grounded strategy collapsed **0 of 20**
-  ([`FRESH_TRIAL_REPORT.md`](FRESH_TRIAL_REPORT.md)). So **failure-band elimination is
-  verified on two datasets** (SO-101 held-out 5/20→0; fresh 8/20→0), with the grounded
-  evidence referencing the *new* scene. The *subjective* numbers (boundary acceptance, phase
-  accuracy, **evidence factual-accuracy**) are produced when you grade the clips blind in
-  [`REVIEW_GUIDE.md`](REVIEW_GUIDE.md); until then they are **not yet claimed** — see "What
-  is not yet shown."
+  uniform-fifths blobs; the grounded strategy collapsed **0 of 20**. So **failure-band
+  elimination is verified on two datasets** (SO-101 held-out 5/20→0; fresh 8/20→0), with the
+  grounded evidence referencing the *new* scene. The *subjective* numbers (boundary acceptance,
+  phase accuracy, **evidence factual-accuracy**) are produced when you grade the clips blind;
+  until then they are **not yet claimed** — see "What is not yet shown."
 
-Every claim above is itemized with its evidence and status in [`CLAIMS.md`](CLAIMS.md).
+Every number above is stated with its evidence and caveat inline; none is asserted beyond the
+one task family it was measured on.
 
 ## What these annotations are for (and what they are not)
 
@@ -158,7 +156,7 @@ the use where the evidence actually supports it.
 They are **not** world-model training inputs. The one preregistered, controlled test of
 using a conditioning signal like this to train a JEPA-style world model came back
 **negative** — the apparent win was a latent-variance artifact that vanished under
-normalization ([`docs/why.md`](docs/why.md)). Scoping the tool to conditioning + curation,
+normalization. Scoping the tool to conditioning + curation,
 rather than implying a world-model win we did not measure, is a credibility feature.
 
 ## When to use it / when not
@@ -207,15 +205,15 @@ Stated plainly so nobody assumes more than was measured:
 
 - **Training utility.** Whether these conditioning annotations actually improve a
   downstream policy is **not demonstrated** — and in one preregistered, controlled test it
-  did not ([`docs/why.md`](docs/why.md)). Do not treat the labels as a known training win.
+  did not. Do not treat the labels as a known training win.
 - **Generalization beyond one task family.** The numbers above are SO-101 pick-and-place.
   The fresh stacking-dataset blind trial exists to test generalization; its per-boundary,
-  per-phase, and **evidence factual-accuracy** numbers are produced when you grade it
-  ([`REVIEW_GUIDE.md`](REVIEW_GUIDE.md)) — until then, treat generalization as untested.
+  per-phase, and **evidence factual-accuracy** numbers are produced when you grade it —
+  until then, treat generalization as untested.
 - **Quality discrimination.** Cannot be evaluated on a dataset that is 49/50 one score;
   needs a dataset with real quality variance.
 - **Driving a trainer off the export.** The LeRobot subtask export round-trips and every
-  frame's index resolves correctly ([`docs/consumability.md`](docs/consumability.md)), but we
+  frame's index resolves correctly, but we
   write a metadata overlay, not a per-frame column in the binary data — so instantiating a
   full SARM/VLA dataloader on it is a next step, not a demonstrated capability.
 
