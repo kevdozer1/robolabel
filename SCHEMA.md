@@ -7,7 +7,7 @@ other.
 
 ## `annotations.parquet` (VLM output)
 
-Schema version: **`robolabel/annotations/v4`** (stored in every row's
+Schema version: **`robolabel/annotations/v5`** (stored in every row's
 `schema_version` column; bump it on any breaking change). Long format — one row
 per record, three record types per episode.
 
@@ -24,9 +24,15 @@ v2, and v3 files still read** — absent columns are treated as null. The v4 fie
 are written by `robolabel enrich` (see `control.py` / `retrieve.py`), not by the
 annotate pass.
 
+**v5** adds five episode-level **curation** columns, all deterministic (no VLM):
+`speed` (`fast`/`medium`/`slow` bin) + `speed_norm` (the underlying scalar),
+`novelty`, and `curation_value` / `curation_tier`. Written by the `robolabel run`
+modules (`speed.py`, `novelty.py`, `curation.py`). Still purely additive — **v1..v4
+files still read**.
+
 | column | type | record types | meaning |
 |---|---|---|---|
-| `schema_version` | str | all | `robolabel/annotations/v4` |
+| `schema_version` | str | all | `robolabel/annotations/v5` |
 | `source` | str | all | always `vlm` in this file |
 | `episode_id` | str | all | stable id from the adapter |
 | `task` | str? | all | task string if the dataset has one |
@@ -40,14 +46,19 @@ annotate pass.
 | `phase` | str? | subtask | **v2**; closed-vocabulary phase (S2+), e.g. `approach`/`grasp` |
 | `target` | str? | subtask | **v3**; grounded object/destination this subtask acts on (S2+), e.g. `red cube`; null for `retract` |
 | `boundary_evidence` | str? | subtask | **v2**; one-line visual evidence for the boundary (S1+) |
-| `active_dof` | str? | subtask | **v4**; `arm`/`gripper`/`both`/`none` — which dof group moves over the segment (deterministic, from the action stream) |
+| `active_dof` | str? | subtask | **v4**; `arm`/`gripper`/`both`/`none` — which dof group moves (deterministic). Optional/off by default; low-discrimination on pick/pour/fold (mostly `both`) |
 | `quality` | int? | episode_metadata | curation/training-usefulness, 1–5 |
 | `task_success_quality` | int? | episode_metadata | task-completion score, 1–5 |
 | `mistake` | bool? | episode_metadata | clear visible mistake |
 | `boundary_clarity` | str? | episode_metadata | e.g. `clear`/`partial`/`weak` |
 | `control_mode` | str? | episode_metadata | legacy strategy metadata if provided (superseded by `control_modality`) |
-| `control_modality` | str? | episode_metadata | **v4**; `joint`/`end-effector` from the action feature names (deterministic) |
+| `control_modality` | str? | episode_metadata | **v4**; `joint`/`end-effector` — the action **coordinate frame** (joint targets vs Cartesian poses), from the action feature names. NOT gripper involvement |
 | `reason` | str? | episode_metadata | the VLM's stated evidence |
+| `speed` | str? | episode_metadata | **v5**; `fast`/`medium`/`slow` pace bin vs the dataset (deterministic) |
+| `speed_norm` | float? | episode_metadata | **v5**; the underlying scalar (mean per-step action velocity) |
+| `novelty` | float? | episode_metadata | **v5**; per-episode novelty = mean distance to nearest neighbours in a frame embedding (deterministic) |
+| `curation_value` | float? | episode_metadata | **v5**; `f(quality, novelty)` in [0,1], weights from the run config |
+| `curation_tier` | str? | episode_metadata | **v5**; value-tiered overlay: `full`/`reduced`/`minimal` (compress) or `keep`/`cut` (top-cut). Never deletes data |
 | `subgoal_frame_idx` | int? | subgoal | frame index of the **real** end-of-sub-step subgoal (ground truth) |
 | `subgoal_image_path` | str? | subgoal | extracted PNG path (if `--no-images` not set) |
 | `retrieved_subgoal_episode_id` | str? | subgoal | **v4**; episode the retrieved (same-phase) subgoal came from; null if none |

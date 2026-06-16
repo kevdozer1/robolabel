@@ -1,13 +1,17 @@
 """Deterministic, data-derived control annotations (no VLM, no inference).
 
-Two fields, both read straight from the dataset's action stream:
+* ``control_modality`` (per episode) — the action **coordinate frame**: ``"joint"`` (the actions
+  are joint-position/velocity targets) vs ``"end-effector"`` (Cartesian end-effector poses),
+  decided from the **action feature names** (LeRobot stores them in ``meta/info.json``). This is
+  NOT about whether the gripper is involved — an SO-101 arm is joint control whether or not it
+  also actuates a gripper. Honest even when constant for a dataset (the SO-arms are all joint).
 
-* ``control_modality`` (per episode) — ``"joint"`` vs ``"end-effector"``, decided from the
-  **action feature names** (LeRobot stores them in ``meta/info.json``). Honest even when it is
-  constant for a dataset (e.g. the SO-arms are all joint-position control).
 * ``active_dof`` (per grounded segment) — ``"arm" | "gripper" | "both" | "none"``: which dof
-  group actually moves over the segment, by per-dim range normalized to the dim's full-episode
-  range vs a threshold (``rubric.yaml -> control.active_dof_threshold``).
+  group moves over the segment (per-dim range normalized to the dim's full-episode range vs
+  ``rubric.yaml -> control.active_dof_threshold``). **Optional and off by default** (the run
+  config's ``control.active_dof``): on these pick/pour/fold tasks it is *low-discrimination* —
+  most manipulation segments move both the arm and the gripper, so it is mostly ``"both"`` and
+  carries little signal. Kept for datasets where arm-only vs gripper-only phases are meaningful.
 
 Nothing here is inferred by a model; it is a deterministic function of the action array and the
 feature names. See ``CLAIMS.md``.

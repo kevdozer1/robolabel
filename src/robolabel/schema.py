@@ -28,6 +28,7 @@ COLUMNS: list[str] = [
     "phase", "target", "boundary_evidence", "active_dof",
     "quality", "task_success_quality", "mistake", "boundary_clarity", "control_mode",
     "control_modality", "reason",
+    "speed", "speed_norm", "novelty", "curation_value", "curation_tier",
     "subgoal_frame_idx", "subgoal_image_path",
     "retrieved_subgoal_episode_id", "retrieved_subgoal_frame_idx",
     "provider", "model", "strategy", "cost_usd", "receipt_path",
@@ -53,9 +54,15 @@ class EpisodeMetadata:
     task_success_quality: int | None = None
     mistake: bool | None = None
     boundary_clarity: str | None = None
-    control_mode: str | None = None         # strategy metadata, e.g. end_effector
-    control_modality: str | None = None     # v4: 'joint'|'end-effector' from action feature names (deterministic)
+    control_mode: str | None = None         # legacy strategy metadata (superseded by control_modality)
+    control_modality: str | None = None     # v4: 'joint'|'end-effector' — the action COORDINATE FRAME (deterministic)
     reason: str = ""
+    # v5: deterministic metadata + curation signals (no VLM).
+    speed: str | None = None                # 'fast'|'medium'|'slow' bin vs the dataset
+    speed_norm: float | None = None         # the underlying scalar (mean action velocity, normalized)
+    novelty: float | None = None            # distance to dataset (higher = more novel); per-episode
+    curation_value: float | None = None     # f(quality, novelty); weights in the run config
+    curation_tier: str | None = None        # 'full'|'reduced'|'minimal' (value-tiered overlay) or 'keep'/'cut'
 
 
 @dataclass
@@ -103,7 +110,10 @@ class EpisodeAnnotation:
                          "quality": m.quality, "task_success_quality": m.task_success_quality,
                          "mistake": m.mistake, "boundary_clarity": m.boundary_clarity,
                          "control_mode": m.control_mode, "control_modality": m.control_modality,
-                         "reason": m.reason, "cost_usd": self.cost_usd, "receipt_path": receipt})
+                         "reason": m.reason, "speed": m.speed, "speed_norm": m.speed_norm,
+                         "novelty": m.novelty, "curation_value": m.curation_value,
+                         "curation_tier": m.curation_tier,
+                         "cost_usd": self.cost_usd, "receipt_path": receipt})
         for seg in self.subtasks:
             rows.append({**base, "record_type": "subtask", "segment_idx": seg.segment_idx,
                          "start_frame": seg.start_frame, "end_frame": seg.end_frame,

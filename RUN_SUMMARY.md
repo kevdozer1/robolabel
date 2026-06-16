@@ -1,52 +1,61 @@
-# Run summary (conditioning fields round-out — schema v4)
+# Run summary (consolidation → config-driven modular pipeline)
 
-Additive, honest conditioning fields. No world model, no image generation; the grounded
-strategy is untouched and remains the validated core.
+robolabel is now an **automated, model-agnostic conditioning-annotation + curation pipeline for
+VLA finetuning on LeRobot data**, driven by one run-config with a module registry. Architecture
++ a few small deterministic scorers; the frozen ablation, eval split, S0, and closed-vocab path
+are untouched. **125 tests pass, ruff clean. Total new API spend: $0.48 of the $6 ceiling.**
 
-## Fields added (schema v4, additive — v1/v2/v3 still read)
+## The config surface
 
-- **`control_modality`** (per episode) — `joint` vs `end-effector`.
-- **`active_dof`** (per subtask) — `arm` / `gripper` / `both` / `none`.
-- **`retrieved_subgoal_episode_id` / `retrieved_subgoal_frame_idx`** (per subgoal) — an
-  optional retrieved subgoal stored **alongside** the real `subgoal_frame_idx`, never replacing it.
+**Minimal** (segmentation + quality only; open-vocab grounded is the default):
+```yaml
+run:
+  dataset: { source: lerobot, target: lerobot/svla_so101_pickplace }   # camera_key: auto
+  model:   { provider: gemini, name: gemini-2.5-flash }
+  probe:   { max_episodes: 10 }
+  out: run_out/pickplace
+```
+**Everything-on** adds `speed`, `subgoals` (+gate-passed retrieval), `control`, `novelty`,
+`curation` — see `configs/run_full.yaml` and [`CONFIG.md`](CONFIG.md). For a LeRobot dataset you
+provide nothing else; non-LeRobot inputs need a tiny JSON ([`PORTING.md`](PORTING.md)).
+`robolabel run --config run.yaml`.
 
-## How they're computed (one line each — so captions/docs are accurate)
+## Modules — net-new vs refactored vs corrected
 
-- **control_modality** — read the dataset's `action` feature names: all `*.pos` ⇒ `joint`,
-  Cartesian/pose axes (x/y/z/roll/…) ⇒ `end-effector`. Deterministic; `None` if no names.
-- **active_dof** — per segment, a dof dim "moved" if its range over the segment exceeds
-  `rubric.yaml control.active_dof_threshold` (0.15) of that dim's full-episode range; arm vs
-  gripper split by the `gripper`-named action dim (else last dim). Deterministic, no VLM.
-- **real subgoal** — unchanged: the real end-of-sub-step frame of the segment (ground truth).
-- **retrieved subgoal** — the end frame of a **same-phase** segment from a **different** episode,
-  chosen by nearest cheap frame embedding (12×12 grayscale) or a seeded random pick; left null
-  when no other episode shares the phase. robolabel **selects** real frames; it does **not**
-  generate images.
+| module | status | note |
+|---|---|---|
+| **run-config spine + module registry** | **net-new** | `run.py`; minimal default = segmentation + quality |
+| **auto-detect** (camera/fps/control-space/arm-gripper) | **net-new** | `detect.py`; zero config for LeRobot |
+| `speed` | **net-new** | `speed.py`; deterministic pace, binned vs dataset (π0.7 metadata) |
+| `novelty` | **net-new** | `novelty.py`; distance to NN in a frame embedding |
+| `curation` | **net-new** | `curation.py`; value = f(quality, novelty) + value-tiered overlay (never deletes) |
+| `segmentation` | **refactored** | now a module; **open-vocab default** (closed-vocab `S2` still available) |
+| `quality` | **refactored** | now a module |
+| `subgoals` | **refactored** | both kinds are pointers (no image files); retrieval only from **gate-passed** episodes; off by default |
+| `control` | **corrected** | `control_modality` = action **coordinate frame** (joint vs Cartesian), NOT gripper involvement; `active_dof` demoted to optional/off (low-discrimination, mostly `both`) |
 
-## Artifacts
+## Probe (5–10 eps each; never a large run)
 
-- `src/robolabel/control.py`, `retrieve.py`; `robolabel enrich --control --retrieve-subgoals`.
-- `docs/figures/grounded_annotations.gif` — 3 panels (pick-place ep7, pour ep5, fold ep4):
-  `phase → target` + timeline/playhead, quality, real keyframes ("selected — not generated") +
-  retrieved subgoals, and the control line. `scripts/make_gif.py`.
-- Docs: `SCHEMA.md` (v4 columns), README (GIF + scope note), `docs/why.md` (copy-shortcut /
-  retrieved-vs-generated, π0.7 reference, no image gen), `CLAIMS.md` rows 17–18, CHANGELOG.
+- **Minimal default** on pick-place / pour / fold (5 eps each): no failures, no regression.
+  Auto-detect confirmed — cameras `up` / `front` / `overhead`, all `control_space: joint`,
+  arm `0–4` / gripper `5`; strategy `S2-open`. Cost **$0.111 / $0.142 / $0.100**.
+- **Everything-on** (pour, 5 eps): all 7 modules produced sensible fields end-to-end — quality
+  varies 3–5 (informative here), speed `slow/medium/fast`, novelty 0.41–0.63, `curation_value`
+  0.03–1.0 with `full/reduced/minimal` tiers, retrieval populated from gate-passed episodes,
+  `control_modality: joint`. Cost **$0.130**. Schema v5.
 
-## State
+## CLAIMS rows touched
 
-- **114 tests pass** (+7: control + retrieve), ruff clean. Frozen SO-101 ablation numbers, the
-  eval split, S0, and the closed-vocab default all untouched. `.env` git-ignored.
-- **New API spend: $0.015** — one episode (pick-place ep7, grounded S2 Flash); the existing
-  pour/fold probe sets were reused; everything else is dataset reads + frame extraction.
-- Nothing pushed or published.
+17 (control corrected), 18 (subgoal retrieval = gate-passed pointers), **19 speed**, **20
+novelty**, **21 curation** (machinery sound + precedented; downstream utility UNVALIDATED), **22
+open-vocab-default**; row 16 supplies the open-vocab quality evidence. Schema → v5 (additive;
+v1–v4 still read).
 
-## What still needs your eyes
+## The one decision left to you
 
-1. **The GIF** (`docs/figures/grounded_annotations.gif`, ~3 MB) — eyeball it and decide if it's
-   the README hero you want (size/layout are easy to tune in `scripts/make_gif.py`).
-2. **`active_dof_threshold = 0.15`** is a documented choice (CLAIMS row 17), not validated
-   against human DoF labels — confirm it reads right on your tasks (it currently gives the
-   sensible `pour water → arm`, `retract → arm`, manipulation → `both`).
-3. The **retrieved subgoal is a selection, not a proven win** — its downstream training/eval
-   benefit is explicitly untested (CLAIMS row 18).
-4. Whether to **commit the GIF** and **push** (still your call from the prior run).
+**`curation` is the only module whose downstream value is unproven** — the machinery is sound and
+precedented (Smart Black Box value-tiering; "train on the top-value ~20%"), but whether the
+value score / compression tiers actually improve a finetune is UNVALIDATED (CLAIMS row 21). It
+ships **off by default** with that honest status. Decision: keep it that way, or prioritize a
+downstream curation-utility experiment before promoting it. (Routine: nothing pushed/published —
+say the word and I'll push `main`.)

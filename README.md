@@ -6,14 +6,24 @@
 
 ## What it does
 
-robolabel reads a [LeRobot](https://github.com/huggingface/lerobot) robot-manipulation
-dataset and uses a vision-language model to draft three things per episode: where each
-subtask starts and ends, a 1–5 quality score, and a representative keyframe per subtask.
-It then **measures those drafts against a human**, in plain numbers, instead of assuming
-they are right. You watch the clips in a browser viewer, and the tool tells you how often
-the model's boundaries, scores, and stated reasons actually match what you see. The output
-is a parquet sidecar plus an export in LeRobot's own subtask format. The honest pitch is
-not "good labels" — it is **drafts, plus an honest measurement of how good they are**.
+robolabel is **automated, model-agnostic conditioning-annotation and curation for VLA
+finetuning on [LeRobot](https://github.com/huggingface/lerobot) data, built to run at scale.**
+One config drives a modular pipeline (`robolabel run --config run.yaml`): from a LeRobot
+dataset it auto-detects everything it needs and drafts, per episode, the **conditioning**
+signals a VLA finetune wants — subtask boundaries (`phase → target`), a quality score, optional
+speed/control metadata and subgoal keyframes — plus dataset-level **curation** (novelty + a
+value score with an optional fidelity-tier overlay). The minimal default is just segmentation +
+quality; every other module is one toggle.
+
+It is also honest about itself: the VLM drafts are **measured against a human**, in plain
+numbers, instead of assumed right. You watch the clips in a browser viewer and the tool tells
+you how often the model's boundaries, scores, and stated reasons match what you see. The output
+is a parquet sidecar plus an export in LeRobot's own subtask format. The pitch is not "good
+labels" — it is **drafts at scale, plus an honest measurement of how good they are, plus the
+curation to pick what to train on**.
+
+Quickstart: [`CONFIG.md`](CONFIG.md) (the run config) · [`PORTING.md`](PORTING.md) (zero config
+for LeRobot; one tiny file for non-LeRobot inputs).
 
 ![What robolabel adds to one raw LeRobot episode: subtask boundaries, a quality judgment, and subgoal keyframes.](docs/figures/annotation_overview.png)
 
@@ -101,7 +111,10 @@ the baseline). Full writeup: [`STRATEGY_REPORT.md`](STRATEGY_REPORT.md).
 - **Quality scores: read with care.** The gold here is 49/50 "score 5", so a model that
   always says 5 scores 0.97–1.00 — above both Gemini Flash and Pro. The number that means
   something is the **catastrophic false-negative rate** (a human-5 scored ≤2, which would
-  silently filter good data): Flash 3/30, Pro **1/30**.
+  silently filter good data): Flash 3/30, Pro **1/30**. On easy/uniform datasets like this,
+  quality is near-degenerate; the deterministic **`speed`** signal (mean action velocity, binned
+  fast/medium/slow) is usually the more informative episode metadata there. Quality + speed are
+  π0.7's two metadata signals — robolabel produces both.
 - **The free baseline loses.** A proprioceptive segmenter from the gripper signal (no VLM,
   $0) scores 0.18–0.20 IoU — the VLM beats it by ~0.10–0.25, so the API cost buys something.
 - **Generalization (fresh dataset, paired).** On a second, never-touched dataset
@@ -157,6 +170,18 @@ consumer.
 (use a tool like forge), or as evidence that these annotations help training (they have not
 been shown to — see below). If your dataset has real quality variance, re-tune the rubric
 and re-measure; the defaults were tuned on tabletop pick-and-place.
+
+## Relationship to LeRobot Annotate
+
+robolabel is **not a competitor to [LeRobot Annotate](https://github.com/huggingface/lerobot-annotate)**
+— they compose. LeRobot Annotate is the canonical *manual* GUI for a human to author/correct
+subtask segments and persist them in the on-disk convention. robolabel is the *automated,
+at-scale* front of the same workflow: it auto-drafts the conditioning annotations and curates
+the dataset across many episodes, then **exports into the LeRobot subtask convention**
+(`export --format lerobot`, round-trip-tested through lerobot's own `load_subtasks`). The
+intended loop is **draft (robolabel) → manual review / edit (LeRobot Annotate) → train** — you
+let robolabel do the bulk pass and the curation, then a human fixes the cases the viewer/blind
+grade flags, in the format the trainer already reads.
 
 ## Related tools and when to use them
 

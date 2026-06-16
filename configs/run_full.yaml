@@ -1,0 +1,15 @@
+# Everything on — exercises all modules end to end.
+run:
+  dataset: { source: lerobot, target: lerobot/svla_so101_pickplace, camera_key: auto }
+  model:   { provider: gemini, name: gemini-2.5-flash }
+  probe:   { max_episodes: 5 }
+  out: run_out/full
+  seed: 0
+modules:
+  segmentation: { enabled: true, strategy: grounded, vocabulary: open }
+  quality:      { enabled: true }
+  speed:        { enabled: true }
+  subgoals:     { enabled: true, retrieval: true, retrieval_method: embedding }
+  control:      { enabled: true, active_dof: true }
+  novelty:      { enabled: true, k: 4 }
+  curation:     { enabled: true, compress: true, weights: { quality: 0.5, novelty: 0.5 } }

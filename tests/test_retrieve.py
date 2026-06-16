@@ -48,6 +48,25 @@ def test_retrieve_no_same_phase_candidate_leaves_null():
     assert sg.get("retrieved_subgoal_episode_id") in (None,) or _isnull(sg.get("retrieved_subgoal_episode_id"))
 
 
+def test_retrieve_only_from_allowed_sources():
+    df = to_dataframe([
+        _ann("0", [("approach", 10), ("grasp", 20)]),
+        _ann("1", [("approach", 15), ("grasp", 25)]),
+        _ann("2", [("approach", 18), ("grasp", 28)]),
+    ])
+    # allow retrieving only FROM episode "2" (e.g. the only gate-passed one)
+    out = retrieve_subgoals(df, method="random", seed=1, allowed_sources={"2"})
+    for e in ("0", "1"):
+        for s in episode_records(out, e)["subgoals"]:
+            rid = s.get("retrieved_subgoal_episode_id")
+            if not _isnull(rid):
+                assert rid == "2"
+    # empty allowed set -> nothing may be retrieved from
+    out2 = retrieve_subgoals(df, method="random", seed=1, allowed_sources=set())
+    assert all(_isnull(s.get("retrieved_subgoal_episode_id"))
+               for e in ("0", "1", "2") for s in episode_records(out2, e)["subgoals"])
+
+
 def test_retrieve_is_deterministic():
     df = to_dataframe([
         _ann("0", [("approach", 10), ("grasp", 20)]),

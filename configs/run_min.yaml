@@ -1,0 +1,6 @@
+# Minimal default: segmentation (open-vocab grounded) + quality only.
+run:
+  dataset: { source: lerobot, target: lerobot/svla_so101_pickplace }   # camera_key: auto
+  model:   { provider: gemini, name: gemini-2.5-flash }
+  probe:   { max_episodes: 5 }
+  out: run_out/min

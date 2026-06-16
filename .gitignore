@@ -52,3 +52,6 @@ probe_*/
 *.log
 # gallery config (regenerable via scripts/make_gallery.py; references local inspect_data)
 gallery.json
+
+# run-config outputs (regenerable)
+run_out/

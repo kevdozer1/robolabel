@@ -11,6 +11,7 @@ __version__ = "0.1.0"
 # (the grounded object/destination slot — "phase -> target"). v4 adds deterministic,
 # data-derived conditioning fields: `control_modality` (episode), `active_dof` (subtask),
 # and a `retrieved_subgoal_*` pair (subgoal — a same-phase keyframe from a DIFFERENT episode,
-# stored alongside the real same-episode keyframe, never replacing it). Additive: v1/v2/v3
-# files still read — absent columns are treated as null.
-SCHEMA_VERSION = "robolabel/annotations/v4"
+# stored alongside the real same-episode keyframe, never replacing it). v5 adds episode-level
+# curation signals: `speed`/`speed_norm` (deterministic metadata), `novelty`, and
+# `curation_value`/`curation_tier`. Additive: v1..v4 files still read — absent columns null.
+SCHEMA_VERSION = "robolabel/annotations/v5"

@@ -57,11 +57,14 @@ def _embedding(arr: np.ndarray) -> np.ndarray:
 
 
 def retrieve_subgoals(df, frame_getter: Callable[[str, int], np.ndarray] | None = None,
-                      method: str = "random", seed: int = 0):
+                      method: str = "random", seed: int = 0,
+                      allowed_sources: set[str] | None = None):
     """Write retrieved_subgoal_episode_id/frame_idx into a copy of ``df``.
 
     ``frame_getter(episode_id, frame_idx) -> ndarray`` enables embedding selection; without it
     (or with ``method="random"``) selection is a seeded random same-phase pick.
+    ``allowed_sources`` restricts which episodes a subgoal may be *retrieved from* — pass the
+    gate-passed set so a failure-band episode can't poison another episode's subgoal.
     """
     df = df.copy()
     for col in ("retrieved_subgoal_episode_id", "retrieved_subgoal_frame_idx"):
@@ -87,7 +90,8 @@ def retrieve_subgoals(df, frame_getter: Callable[[str, int], np.ndarray] | None 
         ep = str(df.at[idx, "episode_id"])
         seg = int(df.at[idx, "segment_idx"])
         phase = seg_phase.get((ep, seg), "")
-        cands = [(e, f) for (e, f) in phase_idx.get(phase, []) if e != ep]
+        cands = [(e, f) for (e, f) in phase_idx.get(phase, [])
+                 if e != ep and (allowed_sources is None or e in allowed_sources)]
         if not cands:
             continue
         if use_embed:

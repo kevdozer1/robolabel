@@ -111,6 +111,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", default="demo_out")
     p.add_argument("--episodes", type=int, default=3)
 
+    p = sub.add_parser("run",
+                       help="Run the config-driven modular pipeline (segmentation + quality + optional modules).")
+    p.add_argument("--config", required=True, help="run-config YAML (see CONFIG.md)")
+    p.add_argument("--target", default=None, help="override run.dataset.target")
+    p.add_argument("--out", default=None, help="override run.out")
+    p.add_argument("--max-episodes", type=int, default=None, help="override run.probe.max_episodes")
+
     p = sub.add_parser("enrich",
                        help="Add deterministic, data-derived fields to a sidecar (control + retrieved subgoals).")
     p.add_argument("--annotations", required=True)
@@ -267,6 +274,27 @@ def _gallery(args) -> int:
     return 0
 
 
+def _run(args) -> int:
+    import json as _json
+
+    from .providers.base import MissingCredentialError
+    from .run import RunConfig, run_pipeline
+    config = RunConfig.load(args.config)
+    if args.target:
+        config.run["dataset"]["target"] = args.target
+    if args.out:
+        config.run["out"] = args.out
+    if args.max_episodes is not None:
+        config.run["probe"]["max_episodes"] = args.max_episodes
+    try:
+        result = run_pipeline(config, progress=lambda i, n, e: print(f"  [{i}/{n}] {e}", file=sys.stderr))
+    except MissingCredentialError as exc:
+        print(f"error: {exc}")
+        return 1
+    print(_json.dumps(result, indent=2))
+    return 0
+
+
 def _enrich(args) -> int:
     import json as _json
 
@@ -368,6 +396,7 @@ _DISPATCH = {
     "review": _review,
     "inspect": _inspect,
     "gallery": _gallery,
+    "run": _run,
     "enrich": _enrich,
     "query": _query,
     "trial-report": _trial_report,

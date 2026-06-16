@@ -2,6 +2,16 @@
 
 ## 0.2.0 (unreleased) — cross-task generalization + open vocabulary
 
+- **Config-driven modular pipeline (`robolabel run --config run.yaml`).** One YAML drives a
+  module registry; the minimal default runs **segmentation + quality** with **open-vocab grounded**
+  segmentation as the default (closed-vocab `S2` stays available). Independently-toggleable modules:
+  `segmentation`, `quality`, `speed`, `subgoals` (+ gate-passed retrieval), `control`, `novelty`,
+  `curation`. Auto-detects camera/fps/control-space/arm-gripper dims from LeRobot metadata (zero
+  config); a tiny JSON covers non-LeRobot inputs. New deterministic scorers (no VLM): `speed`
+  (pi0.7 metadata), `novelty`, `curation` value + value-tiered overlay (never deletes). Schema v5
+  adds the curation columns. Correction: `control_modality` is the action **coordinate frame**
+  (joint vs Cartesian), not gripper involvement; `active_dof` demoted to optional/low-discrimination.
+  Repositioned README + `CONFIG.md` / `PORTING.md`; composes with (exports into) LeRobot Annotate.
 - **Deterministic conditioning fields (schema v4, additive; `robolabel enrich`).** Three
   data-derived columns, no VLM: `control_modality` (`joint`/`end-effector`, from the action
   feature names), per-segment `active_dof` (`arm`/`gripper`/`both`, from which action dims move
