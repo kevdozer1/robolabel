@@ -24,13 +24,18 @@
   tasks (pick-place, pour, fold): `phase → target` + timeline/playhead, quality, the real
   end-of-sub-step subgoal keyframes ("selected — not generated") + retrieved subgoals, and the
   control line. `scripts/make_gif.py`.
-- **`robolabel gallery`** — load several task datasets into one task-grouped view (the
-  grounded lane shown per task), so you can eyeball grounded across pick-place / stacking /
-  pour / fold in one browsable page. Multi-source frame routing (each task keeps its own
-  dataset + camera + episode range); dependency-free and offline like `inspect`.
-  `scripts/make_gallery.py` writes the config (`robolabel gallery --config gallery.json`).
-  Also adds **`inspect --episodes 0-7`** to load only the annotated episode range instead of
-  the whole dataset.
+- **`robolabel gallery`** — a **unified evaluation gallery**: loads all task datasets into one
+  view to see every module's output across the population. A landing **card grid** grouped by
+  task (representative thumbnail + quality / speed / novelty / curation tier), sortable and
+  filterable by task / quality / novelty / tier — so the scale features (novelty, curation)
+  become legible as a spread, not one number in isolation. Clicking a card opens the per-episode
+  inspect view (video + open-vocab `phase → target` timeline + evidence tab) with a new
+  **Modules** panel listing every field with honest labels (control = action *coordinate frame*,
+  subgoals = selected/retrieved **pointers, not generated**, curation = *value = f(quality,
+  novelty); downstream utility unvalidated*) and a run header showing which modules were enabled.
+  Multi-source frame routing; dependency-free and offline like `inspect` (validated: all tasks
+  render with HF offline + the VLM path blocked — zero network). `scripts/make_gallery.py` writes
+  the config (`robolabel gallery --config gallery.json`). Also adds **`inspect --episodes 0-7`**.
 - **Open-vocabulary grounded variant (`S2-open`).** A first-class strategy that keeps S2's
   frame-grounding + per-boundary evidence + required `target`, but turns the closed phase
   vocabulary OFF so the model names each phase in free text ("tilt to pour", "grasp corner").

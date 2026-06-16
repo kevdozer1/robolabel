@@ -1,3 +1,32 @@
+# Run summary (unified evaluation gallery)
+
+A unified evaluation **gallery** now shows every module's output across all tasks in one place,
+reusing the existing `robolabel inspect` machinery (dependency-free, offline, zero-API). Landing
+= a card grid grouped by task (thumbnail + quality / speed / novelty / curation tier), sortable +
+filterable; clicking a card opens the per-episode inspect view with a new **Modules** panel
+(honest labels: control = action coordinate frame; subgoals = selected/retrieved pointers, not
+generated; curation = value = f(quality, novelty), downstream utility unvalidated) and a run
+header of enabled modules.
+
+**Launch:**
+```bash
+python scripts/make_gallery.py            # builds gallery.json from the run outputs
+robolabel gallery --config gallery.json
+```
+
+**Data (everything-on, ≤8 eps each):** pick-place 8 ($0.139), fold 8 ($0.171), pour 5 (reused,
+$0 new). **New API spend this run: $0.31 of the $3 ceiling.** **128 tests pass** (+3 gallery data
+assembly), ruff clean. **Offline validated:** all 3 tasks (21 episodes) render end-to-end with
+`HF_HUB_OFFLINE=1` and the VLM network path blocked — zero network calls, frames (incl. retrieved
+cross-episode subgoals) served from cache.
+
+**Decisions from the last run, resolved:** (1) curation stays **off by default** with its honest
+"downstream utility unvalidated" status — no curation-utility experiment (that's a separate
+real-arm training project), no change to the module. (2) `main` **pushed** (consolidation +
+gallery). Frozen ablation, eval split, S0, and closed-vocab default untouched.
+
+---
+
 # Run summary (consolidation → config-driven modular pipeline)
 
 robolabel is now an **automated, model-agnostic conditioning-annotation + curation pipeline for

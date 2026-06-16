@@ -65,6 +65,8 @@ class InspectSession:
                 "gallery_task": e.get("gallery_task", ""),
                 "sort_iou": e.get("sort_iou", 1.0), "n_flags": e.get("n_flags", 0),
                 "graded": self._is_graded(e["episode_id"]),
+                "modules": e.get("modules", {}), "thumb": e.get("thumb", 0),
+                "enabled": e.get("enabled", []),
             })
         return {
             "dataset": self.data.get("dataset", ""),
@@ -399,9 +401,38 @@ h3{margin:13px 0 6px;font-size:13px}.muted{color:var(--muted);font-size:12px}
 .verdict label:has(input:checked){border-color:var(--blue);background:#eff6ff}
 button.primary{background:var(--blue);color:#fff;border:0;padding:10px;border-radius:6px;font-weight:700;cursor:pointer;width:100%;margin-top:8px}
 .badge{display:inline-block;background:#eef2ff;color:#3730a3;border-radius:999px;padding:1px 7px;font-size:11px}
+.gallery{padding:14px;overflow-y:auto;height:calc(100vh - 50px)}
+.gtools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+.gtask{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:16px 0 8px;border-top:1px solid var(--line);padding-top:10px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(188px,1fr));gap:12px}
+.card{border:1px solid var(--line);border-radius:9px;overflow:hidden;cursor:pointer;background:#fff}
+.card:hover{border-color:var(--blue);box-shadow:0 1px 7px rgba(37,99,235,.16)}
+.card img{width:100%;height:118px;object-fit:cover;background:#0b1220;display:block}
+.card .cbody{padding:8px}.card .ctitle{font-size:12px;font-weight:700;margin-bottom:2px}
+.card .ctask{font-size:11px;color:var(--muted);height:29px;overflow:hidden;line-height:1.3}
+.cfields{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px}
+.chip{font-size:10px;border:1px solid var(--line);border-radius:999px;padding:1px 6px;color:var(--ink);background:#f8fafc}
+.chip.full{background:#dcfce7;border-color:#16835b}.chip.reduced{background:#fef9c3;border-color:#ca8a04}.chip.minimal{background:#fee2e2;border-color:#b91c1c}
+.modrow{display:grid;grid-template-columns:128px 1fr;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:12px}
+.mk{color:var(--muted);font-weight:600}.modnote{font-size:11px;color:var(--muted);font-style:italic;margin-top:2px}
+.sgrow{display:flex;gap:8px;align-items:center;margin:6px 0;font-size:12px}.sgrow img{width:88px;border-radius:5px;background:#0b1220;cursor:pointer}
 </style></head><body>
-<header><h1>robolabel · inspect</h1><div class="meta" id="meta"></div></header>
-<main>
+<header><h1>robolabel · <span id="hmode">inspect</span></h1>
+ <div class="meta" id="meta"></div>
+ <button class="btn" id="backBtn" onclick="backToGallery()" style="display:none">← Gallery</button></header>
+<section class="gallery" id="galleryView" style="display:none">
+ <div class="gtools">
+  <label class="muted">task <select id="gtask" onchange="renderGallery()"><option value="all">all</option></select></label>
+  <label class="muted">sort <select id="gsort" onchange="renderGallery()">
+   <option value="curation">curation value</option><option value="quality">quality</option>
+   <option value="novelty">novelty</option><option value="speed">speed</option><option value="id">episode id</option></select></label>
+  <label class="muted">tier <select id="gtier" onchange="renderGallery()">
+   <option value="all">all</option><option value="full">full</option><option value="reduced">reduced</option><option value="minimal">minimal</option></select></label>
+  <span class="muted" id="grun"></span>
+ </div>
+ <div id="cards"></div>
+</section>
+<main id="mainView">
  <aside class="queue">
   <div class="qtools">
    <select id="sort" onchange="renderQueue()">
@@ -415,7 +446,7 @@ button.primary{background:var(--blue);color:#fff;border:0;padding:10px;border-ra
   </div>
   <div class="qlist" id="queue"></div></aside>
  <section class="viewer">
-  <div class="vtitle"><h2 id="epid">Loading…</h2><p id="task"></p></div>
+  <div class="vtitle"><h2 id="epid">Loading…</h2><p id="task"></p><div class="muted" id="runhdr"></div></div>
   <div class="stage"><img id="frame" alt="frame">
    <div class="scrub"><button class="btn play" id="play" onclick="togglePlay()">▶</button>
     <input type="range" id="slider" min="0" max="0" value="0" oninput="onScrub()">
@@ -423,7 +454,8 @@ button.primary{background:var(--blue);color:#fff;border:0;padding:10px;border-ra
   <div class="tracks" id="tracks"></div>
  </section>
  <section class="right">
-  <div class="tabbar"><div class="tab on" data-tab="metrics" onclick="tab('metrics')">Metrics</div>
+  <div class="tabbar"><div class="tab" data-tab="modules" onclick="tab('modules')">Modules</div>
+   <div class="tab on" data-tab="metrics" onclick="tab('metrics')">Metrics</div>
    <div class="tab" data-tab="evidence" onclick="tab('evidence')">Evidence</div>
    <div class="tab" data-tab="grade" id="gradeTab" onclick="tab('grade')" style="display:none">Grade</div></div>
   <div id="panel"></div></section></main>
@@ -433,8 +465,39 @@ async function j(u,o={}){const r=await fetch(u,o);const d=await r.json();if(!r.o
 async function init(){S=await j('/api/state');document.getElementById('meta').innerHTML=
   `<span>${esc(S.gallery?'gallery':S.dataset)}</span><span>${S.episodes.length} episodes</span>${S.gallery?'<span class="badge">'+galleryTaskCount()+' tasks</span>':''}${S.blind?'<span class="badge">BLIND TRIAL '+S.graded_count+'/'+S.episodes.length+' graded</span>':''}`;
  if(S.blind)document.getElementById('gradeTab').style.display='';
+ if(S.gallery){document.getElementById('hmode').textContent='gallery';buildGalleryControls();showGallery();return;}
  renderQueue();cur=queueOrder()[0];if(cur)await load(cur);}
 function galleryTaskCount(){return new Set(S.episodes.map(e=>e.gallery_task)).size;}
+// ---- gallery landing (card grid grouped by task) -------------------------- #
+function buildGalleryControls(){
+ const sel=document.getElementById('gtask');
+ for(const t of [...new Set(S.episodes.map(e=>e.gallery_task))].sort()){
+  const o=document.createElement('option');o.value=t;o.textContent=t;sel.appendChild(o);}
+ const en=[...new Set(S.episodes.flatMap(e=>e.enabled||[]))];
+ document.getElementById('grun').textContent='modules enabled: '+(en.join(', ')||'—');}
+function showGallery(){galleryView.style.display='block';mainView.style.display='none';backBtn.style.display='none';renderGallery();}
+function openEpisode(id){galleryView.style.display='none';mainView.style.display='grid';backBtn.style.display='';
+ load(id).then(()=>{if(S.gallery)tab('modules');});}
+function backToGallery(){showGallery();}
+const SP={slow:0,medium:1,fast:2};
+function renderGallery(){
+ const tf=gtask.value,sf=gsort.value,tier=gtier.value;
+ let eps=S.episodes.filter(e=>(tf==='all'||e.gallery_task===tf)&&(tier==='all'||(e.modules||{}).curation_tier===tier));
+ const key=e=>{const m=e.modules||{};return sf==='quality'?(m.quality||0):sf==='novelty'?(m.novelty||0):sf==='speed'?(SP[m.speed]??-1):(m.curation_value??0);};
+ eps.sort((a,b)=>(''+a.gallery_task).localeCompare(''+b.gallery_task)||(sf==='id'?(''+a.episode_id).localeCompare(''+b.episode_id,undefined,{numeric:true}):key(b)-key(a)));
+ const root=document.getElementById('cards');root.innerHTML='';let last=null,grid=null;
+ const counts={};eps.forEach(e=>counts[e.gallery_task]=(counts[e.gallery_task]||0)+1);
+ for(const e of eps){
+  if(e.gallery_task!==last){last=e.gallery_task;const h=document.createElement('div');h.className='gtask';h.textContent=`${e.gallery_task} (${counts[last]})`;root.appendChild(h);
+   grid=document.createElement('div');grid.className='cards';root.appendChild(grid);}
+  grid.appendChild(galleryCard(e));}
+ if(!eps.length)root.innerHTML='<div class="muted">no episodes match the filter</div>';}
+function galleryCard(e){const m=e.modules||{};const d=document.createElement('div');d.className='card';d.onclick=()=>openEpisode(e.episode_id);
+ const sid=(''+e.episode_id).split('::').pop(),tier=m.curation_tier||'';
+ d.innerHTML=`<img src="/frame/${encodeURIComponent(e.episode_id)}/${e.thumb||0}" loading="lazy" onerror="this.style.background='#1f2937'">
+  <div class="cbody"><div class="ctitle">ep ${esc(sid)}</div><div class="ctask">${esc(e.task||'')}</div>
+   <div class="cfields">${m.quality!=null?'<span class="chip">q '+m.quality+'/5</span>':''}${m.speed?'<span class="chip">'+esc(m.speed)+'</span>':''}${m.novelty!=null?'<span class="chip">nov '+Number(m.novelty).toFixed(2)+'</span>':''}${tier?'<span class="chip '+esc(tier)+'">'+esc(tier)+'</span>':''}</div></div>`;
+ return d;}
 function queueOrder(){let q=[...S.episodes];const flt=document.getElementById('filter').value;
  if(flt==='flagged')q=q.filter(e=>e.n_flags>0);if(flt==='ungraded')q=q.filter(e=>!e.graded);
  const s=document.getElementById('sort').value;
@@ -450,8 +513,10 @@ function renderQueue(){const order=queueOrder();const root=document.getElementBy
   const shortId=S.gallery?(''+id).split('::').pop():id;
   b.innerHTML=`<div class="qid">${e.graded?'✓ ':''}ep ${esc(shortId)}</div><div class="qsub">${S.blind?'':'min IoU '+e.sort_iou.toFixed(2)+' · '}${e.n_flags?'<span class="flag">'+e.n_flags+' flags</span>':'no flags'}</div>`;
   root.appendChild(b);}}
-async function load(id){stop();cur=id;E=await j('/api/episode/'+encodeURIComponent(id));renderQueue();
- document.getElementById('epid').textContent='Episode '+E.episode_id;document.getElementById('task').textContent=E.task||'';
+async function load(id){stop();cur=id;E=await j('/api/episode/'+encodeURIComponent(id));if(!S.gallery)renderQueue();
+ document.getElementById('epid').textContent='Episode '+(''+E.episode_id).split('::').pop();
+ document.getElementById('task').textContent=E.task||'';
+ document.getElementById('runhdr').textContent=(E.enabled&&E.enabled.length)?('modules: '+E.enabled.join(', ')):'';
  const sl=document.getElementById('slider');sl.max=Math.max(0,E.num_frames-1);frame=0;sl.value=0;showFrame();renderTracks();renderPanel();}
 function frameEp(){return E.frame_ep||E.episode_id;}
 function showFrame(){document.getElementById('frame').src=`/frame/${encodeURIComponent(frameEp())}/${frame}`;
@@ -480,8 +545,32 @@ function updatePlayheads(){if(!E)return;const pct=(frame/Math.max(1,E.num_frames
  for(const ph of document.querySelectorAll('.phline'))ph.style.left=pct+'%';}
 function highlight(){/* segment hover handled by title; playhead line shows position */}
 function tab(t){TAB=t;for(const el of document.querySelectorAll('.tab'))el.classList.toggle('on',el.dataset.tab===t);renderPanel();}
-function renderPanel(){const p=document.getElementById('panel');if(TAB==='metrics')p.innerHTML=metricsHTML();
+function renderPanel(){const p=document.getElementById('panel');
+ if(TAB==='modules')renderModules(p);else if(TAB==='metrics')p.innerHTML=metricsHTML();
  else if(TAB==='evidence')renderEvidence(p);else renderGrade(p);}
+function mrow(k,v){return `<div class="modrow"><span class="mk">${esc(k)}</span><span>${esc(v)}</span></div>`;}
+function renderModules(p){const m=E.modules||{};const segs=(E.tracks[gName()]||{}).segments||[];
+ let h='<div class="muted">Every module field for this episode, with honest labels.</div>';
+ h+='<h3>segmentation — phase → target</h3>';
+ h+=segs.length?segs.map((s,i)=>`<div class="modrow"><span class="mk">seg ${i}</span><span>${esc(segLabel(s))}${s.evidence?' <span class="muted">— '+esc(s.evidence)+'</span>':''}</span></div>`).join(''):'<div class="muted">none</div>';
+ h+='<h3>metadata</h3>'+mrow('quality',m.quality!=null?m.quality+' / 5':'–')+mrow('speed',m.speed||'–');
+ h+='<h3>control</h3>'+mrow('action coordinate frame',m.control_modality||'–');
+ h+='<div class="modnote">joint = joint-position targets; end-effector = Cartesian poses — NOT whether the gripper is involved.</div>';
+ h+='<h3>novelty</h3>'+mrow('score (0–1, higher = rarer)',m.novelty!=null?Number(m.novelty).toFixed(3):'–');
+ h+='<h3>curation</h3>'+mrow('value',m.curation_value!=null?Number(m.curation_value).toFixed(3):'–')+mrow('tier',m.curation_tier||'–');
+ h+='<div class="modnote">value = f(quality, novelty); downstream training utility unvalidated. Tier is an overlay — it never deletes data.</div>';
+ p.innerHTML=h;
+ const sg=document.createElement('div');
+ sg.innerHTML='<h3>subgoals — frame pointers (selected / retrieved — not generated)</h3>';
+ const pref=S.gallery?(E.gallery_task+'::'):'';
+ for(const s of (E.subgoals||[])){
+  const real=`<img src="/frame/${encodeURIComponent(frameEp())}/${s.frame}" onclick="seekFrame(${s.frame})" title="real same-episode keyframe f${s.frame}">`;
+  let ret='<span class="muted">no retrieved frame (no same-phase gate-passed source)</span>';
+  if(s.retrieved_frame!=null&&s.retrieved_episode){
+   const rid=encodeURIComponent(pref+s.retrieved_episode);
+   ret=`<img src="/frame/${rid}/${s.retrieved_frame}" onerror="this.style.display='none'" title="retrieved from ep ${esc(s.retrieved_episode)} f${s.retrieved_frame}"><span class="muted">retrieved ← ep ${esc(s.retrieved_episode)}</span>`;}
+  const d=document.createElement('div');d.className='sgrow';d.innerHTML=`<span class="mk">seg ${s.segment_idx}</span>${real}${ret}`;sg.appendChild(d);}
+ p.appendChild(sg);}
 function metricsHTML(){let q=E.quality||{};let rows='';for(const name of S.track_order){if(name==='gold'||!E.tracks[name])continue;const m=(E.metrics||{})[name]||{};
   rows+=`<tr><td style="color:${S.track_colors[name]}">${esc(S.blind?'model':name)}</td><td class="num">${fmt(m.iou)}</td><td class="num">${fmt(m.boundary_precision)}</td><td class="num">${fmt(m.boundary_recall)}</td><td class="num">${m.mae==null?'–':m.mae.toFixed(1)}</td><td class="num">${m.n_segments}</td></tr>`;}
  const flags=(E.gate_flags||[]).map(f=>`<span class="flag">${esc(f)}</span>`).join(' · ')||'<span class="muted">none</span>';

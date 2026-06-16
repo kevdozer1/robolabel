@@ -24,7 +24,12 @@ import numpy as np  # noqa: E402
 
 from robolabel.episode import Episode  # noqa: E402
 from robolabel.gate import is_degenerate_single_segment, is_uniform_split  # noqa: E402
-from robolabel.inspect_data import assemble, build_episode, segments_from_records  # noqa: E402
+from robolabel.inspect_data import (  # noqa: E402
+    assemble,
+    build_episode,
+    module_block,
+    segments_from_records,
+)
 from robolabel.labelers.gripper_baseline import segment_from_state  # noqa: E402
 from robolabel.labelers.segmentation import segment_episode  # noqa: E402
 from robolabel.rubric import load_rubric  # noqa: E402
@@ -215,8 +220,11 @@ def from_annotations(args):
         if "uniform-fifths" in track_order:
             tracks["uniform-fifths"] = {"segments": _uniform5(nf)}
         gname = track_specs[0][0]
+        mods = module_block(rec0["metadata"])
         ep = build_episode(eid, nf, 30.0, rec0["task"] or "", {**tracks, "gold": tracks[gname]},
-                           gate_flags=_bands_for(tracks[gname]["segments"]))
+                           gate_flags=_bands_for(tracks[gname]["segments"]),
+                           quality={"auto": mods.get("quality")},
+                           modules=mods, subgoals=rec0["subgoals"])
         ep["tracks"].pop("gold", None)
         episodes.append(ep)
     payload = assemble(args.dataset or "", "lerobot", track_order, episodes)

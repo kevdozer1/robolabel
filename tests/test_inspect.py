@@ -22,6 +22,45 @@ def test_parse_episodes():
     assert parse_episodes("0-2,5") == [0, 1, 2, 5]
 
 
+def test_build_episode_carries_module_block():
+    from robolabel.inspect_data import build_episode, module_block
+    meta = {"quality": 4, "speed": "fast", "novelty": 0.42, "curation_value": 0.8,
+            "curation_tier": "full", "control_modality": "joint"}
+    tracks = {"grounded": {"segments": [{"start": 0, "end": 10, "phase": "grasp", "target": "cube"}]},
+              "gold": {"segments": [{"start": 0, "end": 10}]}}
+    subgoals = [{"segment_idx": 0, "subgoal_frame_idx": 10,
+                 "retrieved_subgoal_episode_id": "3", "retrieved_subgoal_frame_idx": 7}]
+    ep = build_episode("0", 40, 30.0, "stack", tracks, modules=module_block(meta), subgoals=subgoals)
+    assert ep["modules"]["quality"] == 4 and ep["modules"]["speed"] == "fast"
+    assert ep["modules"]["control_modality"] == "joint"
+    assert ep["thumb"] == 10                              # first subgoal keyframe
+    assert ep["subgoals"][0]["retrieved_episode"] == "3" and ep["subgoals"][0]["retrieved_frame"] == 7
+    # enabled inferred from populated fields
+    assert set(ep["enabled"]) == {"segmentation", "quality", "speed", "subgoals", "control", "novelty", "curation"}
+
+
+def test_module_block_coerces_nan():
+    import numpy as np
+
+    from robolabel.inspect_data import module_block
+    m = module_block({"quality": np.nan, "novelty": np.nan, "speed": None, "curation_tier": "nan"})
+    assert m["quality"] is None and m["novelty"] is None and m["curation_tier"] is None
+
+
+def test_gallery_state_exposes_card_fields(tmp_path: Path):
+    from robolabel.inspect_data import assemble, build_episode, module_block
+    from robolabel.inspect_server import InspectSession, merge_gallery_payloads
+    meta = {"quality": 5, "speed": "slow", "novelty": 0.2, "curation_value": 0.75, "curation_tier": "full"}
+    ep = build_episode("0", 30, 30.0, "t", {"grounded": {"segments": [{"start": 0, "end": 9, "phase": "grasp"}]}},
+                       modules=module_block(meta), subgoals=[{"segment_idx": 0, "subgoal_frame_idx": 9}])
+    payload = assemble("ds", "lerobot", ["grounded"], [ep])
+    combined, _ = merge_gallery_payloads([{"task": "pour", "payload": payload, "episodes": {}}])
+    st = InspectSession(combined).state()
+    assert st["gallery"] is True
+    e0 = st["episodes"][0]
+    assert e0["gallery_task"] == "pour" and e0["modules"]["curation_tier"] == "full" and e0["thumb"] == 9
+
+
 def test_merge_gallery_payloads():
     from robolabel.inspect_server import merge_gallery_payloads
     pa = {"track_order": ["grounded"], "track_colors": {"grounded": "#2563eb"},
