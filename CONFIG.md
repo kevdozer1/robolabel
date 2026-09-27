@@ -6,7 +6,7 @@ independently toggleable**. The minimal default runs only **segmentation + quali
 **open-vocabulary grounded** segmentation. Modules execute in dependency order; dataset-level
 modules (novelty, curation, retrieval) run after the per-episode pass.
 
-For a standard LeRobot dataset you provide **nothing** beyond `source`/`target` — camera key,
+For a standard LeRobot dataset you provide **nothing** beyond `source`/`target`: camera key,
 fps, control space, and arm/gripper dims are auto-detected (see [`PORTING.md`](PORTING.md)).
 
 ## Minimal (copy-paste)
@@ -48,15 +48,35 @@ modules:
 
 | module | scope | default | requires | does |
 |---|---|---|---|---|
-| `segmentation` | episode | **on** | — | grounded `phase → target` subtasks. `vocabulary: open` (default) = `S2-open`; `closed` = `S2`; `strategy: baseline` = S0 |
-| `quality` | episode | **on** | — | episode quality 1–5 (VLM). Near-degenerate on easy datasets — see `speed` |
-| `speed` | episode→dataset | off | — | continuous, **motion-defined** `active_frames`/`active_seconds`/`active_fraction` (phase-agnostic) + raw `speed_norm`; a `fast`/`medium`/`slow` tier only when corpus-relative (else null) |
+| `segmentation` | episode | **on** | none | grounded `phase → target` subtasks. `vocabulary: open` (default) = `S2-open`; `closed` = `S2`; `strategy: baseline` = S0 |
+| `quality` | episode | **on** | none | episode quality 1–5 (VLM). Near-degenerate on easy datasets; see `speed` |
+| `speed` | episode→dataset | off | none | continuous, **motion-defined** `active_frames`/`active_seconds`/`active_fraction` (phase-agnostic) + raw `speed_norm`; a `fast`/`medium`/`slow` tier only when corpus-relative (else null) |
 | `subgoals` | episode→dataset | off | `segmentation` | real end-of-sub-step keyframe (pointer); `retrieval: true` adds a same-phase keyframe from another **gate-passed** episode (pointer). No image files written |
 | `control` | episode | off | `segmentation` | `control_modality` (joint vs end-effector coordinate frame, dataset-level); `active_dof: true` (default on) adds the per-segment **set of component groups that move** (`arm`/`gripper`/`arm+gripper`/`none`), from each dim's smoothed within-segment range |
-| `novelty` | dataset | off | — | deterministic per-episode novelty (distance to nearest neighbours in a cheap frame embedding) |
-| `curation` | dataset | off | `quality`, `novelty` | raw `curation_value = f(quality, novelty)`; tiers (`full`/`reduced`/`minimal`, or `keep`/`cut`) are **corpus-relative + guarded** — assigned only when ≥ `min_population` heterogeneous episodes exist (else null, "insufficient population to tier"). Overlay only — never deletes |
+| `novelty` | dataset | off | none | deterministic per-episode novelty (distance to nearest neighbours in a cheap frame embedding) |
+| `curation` | dataset | off | `quality`, `novelty` | raw `curation_value = f(quality, novelty)`; tiers (`full`/`reduced`/`minimal`, or `keep`/`cut`) are **corpus-relative + guarded**: assigned only when ≥ `min_population` heterogeneous episodes exist (else null, "insufficient population to tier"). Overlay only; never deletes |
 
 A module whose `requires` are not all enabled raises a clear error at validation. Everything is
 additive in the output (schema v6); see [`SCHEMA.md`](SCHEMA.md). All deterministic modules
-(`speed`, `control`, `novelty`, `curation`) cost **$0** — only `segmentation`/`quality` call the
+(`speed`, `control`, `novelty`, `curation`) cost **$0**; only `segmentation`/`quality` call the
 VLM, and `robolabel run` reports per-module cost.
+
+## Provider names
+
+`model.provider` in a run config (and `--provider` on `robolabel annotate`) takes a registered
+provider name: `gemini`, `openai`, `qwen`, `mock` or `openrouter`. The run config's default is
+`gemini` with `gemini-2.5-flash`. `openrouter` reads its key from `OPENROUTER_API_KEY` and takes an
+OpenRouter model id as `model.name` (or `--model`); always set it, since the default name is a Gemini
+one. Built by name like this, it runs without a spend guard or response cache.
+
+```yaml
+run:
+  model: { provider: openrouter, name: vendor/model-name }   # an OpenRouter model id
+```
+
+## V-lite (experimental)
+
+V-lite adds no subcommands, run-config keys or options: the experimental V-lite pipeline (schema v7)
+has no CLI subcommand yet. It is called from Python, and its spend guard and response cache are set
+up there. See the README section
+[Experimental: V-lite pipeline](README.md#experimental-v-lite-pipeline).

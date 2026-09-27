@@ -1,6 +1,6 @@
 """Spend guard: reserve before every paid HTTP attempt, reconcile after, never cross a cap.
 
-Adapted from statebench's ``spend_guard_v13`` for robolabel's paid calls. Every attempt (including
+Adapted from an earlier spend guard for robolabel's paid calls. Every attempt (including
 retries) reserves its worst case (input estimate at the input price plus ``max_tokens`` at the output
 price) and is refused before anything is sent when the reservation could take the committed total
 past any of:
