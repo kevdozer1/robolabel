@@ -1,0 +1,77 @@
+=== input_frames ===
+Label the phases of one clip of {num_frames} frames ({duration} s at {fps} frames per second). It may show a robot, a humanoid or a person. The images below are {n_images} frames of the clip from camera {camera}, evenly spaced at about {rate} per second, with the first and the last frame included. The line before each image gives its frame number, its time and the camera.
+
+=== input_video ===
+Label the phases of one video clip of {duration} s from camera {camera}. It may show a robot, a humanoid or a person. The video below is the whole clip.
+
+=== task ===
+The dataset's task description is: "{task}".
+
+=== no_task ===
+The dataset gives no task description.
+
+=== objects ===
+Objects in the scene (use these IDs):
+{inventory_lines}
+
+=== candidates ===
+Candidate events found automatically, one per line:
+{candidate_lines}
+The candidates are hints, not boundaries to copy. Put a boundary only where you see an event, at a candidate or anywhere else, and leave out a candidate that you do not see happen.
+
+=== units_frames ===
+start_frame and end_frame are frame numbers. The first segment starts at frame 0, each later segment starts at the frame after the end_frame of the segment before it, and the last segment ends at frame {last_frame}. A boundary can fall between the frames shown: give your best estimate of its frame.
+
+=== units_video ===
+start_s and end_s are times in seconds from the start of the video, in steps of 0.1 s. The first segment starts at 0.0, each later segment starts at the end_s of the segment before it, and the last segment ends at {duration}.
+
+=== target_inventory ===
+the ID of the object the phase acts on, from the object list above; unsure when you cannot tell which object; none when the phase acts on no object. In a release or place phase, target is the object being moved.
+
+=== target_words ===
+the object the phase acts on, in a few plain words; unsure when you cannot tell which object; none when the phase acts on no object. In a release or place phase, target is the object being moved.
+
+=== destination_inventory ===
+the ID of the object the target is being moved to, from the object list above; unsure when you cannot tell; none when the phase moves nothing to a destination.
+
+=== destination_words ===
+where the target is being moved to, in a few plain words; unsure when you cannot tell; none when the phase moves nothing to a destination.
+
+=== candidate_id_list ===
+the ID of the candidate (the part of its line before the colon) whose event is the end of this segment; none when the end of the segment is not at a candidate.
+
+=== candidate_id_none ===
+none (there is no candidate list).
+
+=== rules ===
+Split the whole clip into consecutive segments that do not overlap and together cover it from start to end. Each segment is one phase of the activity. {units_text} There is no minimum number of segments. Never add a phase that you cannot see.
+
+For each segment give:
+- phase_text: a short description of the phase in your own plain words, naming the object it acts on when there is one. Always give it.
+- phase_class: one of approach, grasp, transport, release, retract, press, pour, insert, fold, wipe, push, pull, rotate, open, close, other. The phase list is a vocabulary, not a template: use it only where it fits the activity, otherwise describe the phase in plain words and use other.
+- end_event: the kind of boundary at the end of the segment, which is the event that starts the next segment. The next segment starts at the first moment where that event has begun. The last segment has end_event other. The kinds are:
+  - close_start: the fingers of a gripper or hand start to close;
+  - open_start: the fingers of a gripper or hand start to open;
+  - contact_start: the hand or a held tool starts touching an object or surface;
+  - contact_end: the hand or a held tool stops touching an object or surface;
+  - other: any other kind of boundary.
+- target: {target_rule}
+- destination: {destination_rule}
+- attempt_idx, outcome, attempt_outcome and failure_type: as the rules below say.
+- candidate_id: {candidate_rule}
+
+Attempts:
+- An attempt is one try at a step of the task: an approach and a close on an object, or an approach and a contact with a control or a surface. Number the attempts from 1 in time order; every phase of an attempt has its attempt_idx.
+- A retry is a new attempt with attempt_idx one higher, not a repeated phase.
+- When the activity has no separate tries, every segment has attempt_idx 1.
+
+Outcomes and failures (each phase's outcome is its own result):
+- outcome is the result of this phase alone: success when the phase did what it set out to do, failed when it did not, aborted when it was given up before it finished. In a missed grasp, the approach that reached the object is success and the grasp is failed with failure_type missed_grasp.
+- failure_type is none when outcome is success. On the phase that failed it is one of: missed_grasp (the fingers close and the object is not held), slip or drop (the object is held, then lost before it is placed), wrong_object (the fingers close on an object that is not the target, which is then abandoned), misplace (the object is released away from where it should go and then picked up again), press_no_effect (a control is pressed without effect and then pressed again), aborted (an attempt is started and withdrawn before the close), other (any other failure).
+- attempt_outcome is the result of the whole attempt the phase belongs to: success, failed or aborted. Copy it onto every phase of the attempt. An attempt with a failed phase has attempt_outcome failed on each of its phases, whatever their own outcome; an attempt given up before its close has attempt_outcome aborted.
+- Only the phase that failed has outcome failed. The other phases of a failed attempt keep their own results.
+
+Recovery after a failed grasp:
+- the failed grasp ends when the fingers start to reopen, so its end_event is open_start;
+- then comes a retract segment if the arm or hand backs off, still with the attempt_idx of the failed attempt;
+- then comes the approach of the next attempt, with attempt_idx one higher.

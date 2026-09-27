@@ -6,6 +6,10 @@ pipeline (including the offline demo) are unchanged and keep writing v6.
 
 New record types: ``coarse_subtask``, ``attempt``, ``scene_fact``, ``requirement``, ``check``. Nested
 values (boxes, points, visibility, evidence) are stored as JSON text so every column has one type.
+
+The v1.1 fields (SPEC_V1_1 3.5) are additive and optional; they live in their own section at the end of
+this module (``COLUMNS_V11``, ``add_v11_fields``, ``write_v11``, ``read_v11``) and leave the v7 writer
+as it was.
 """
 
 from __future__ import annotations
@@ -157,3 +161,274 @@ def episode_rows(*, arm: str, episode: Any, provider: str, model: str, pipeline_
                      "rule_or_question": f"rule {c['rule_id']}", "checker": "rule", "verdict": c["verdict"],
                      "check_note": c["note"], "cost_usd": 0.0})
     return rows
+
+
+# ------------------------------------------------------------------------------------------------ v1.1 (additive)
+# SPEC_V1_1 3.5: optional fields on subtask and episode_metadata rows. The v7 writer above is unchanged
+# (``COLUMNS_V7``, ``to_dataframe_v7``, ``write_v7`` and ``episode_rows`` produce the same files as
+# before); a v1.1 run adds the fields to the rows with :func:`add_v11_fields` and writes them with
+# :func:`write_v11`. Readers (:func:`read_v11`, :func:`subtask_fields_v11`, :func:`episode_fields_v11`,
+# :func:`subtask_records_v11`, :func:`episode_record_v11`) accept rows and files without the fields and
+# give None for each missing one. ``boundary_source`` is a v7 column; v1.1 adds the values ``coarse`` and
+# ``crawl``. ``event_sources`` is stored as comma-joined text (like ``cameras_used``) and read back as a
+# list. The rows keep ``schema_version`` v7: the new fields are additive (SPEC_V1_1 3.5).
+
+SUBTASK_V11 = ["end_event", "coarse_end_frame", "crawl_calls", "attempt_outcome", "event_sources"]
+EPISODE_V11 = ["has_end_state", "goal_command", "event_sources", "coarse_mode", "coarse_fps", "crawl_enabled",
+               "crawl_model"]
+V11_FIELDS = list(dict.fromkeys(SUBTASK_V11 + EPISODE_V11))
+COLUMNS_V11 = COLUMNS_V7 + [c for c in V11_FIELDS if c not in COLUMNS_V7]
+INT_COLS_V11 = INT_COLS | {"coarse_end_frame", "crawl_calls"}
+FLOAT_COLS_V11 = FLOAT_COLS | {"coarse_fps"}
+BOOL_COLS_V11 = {"mistake", "has_end_state", "crawl_enabled"}
+LIST_COLS_V11 = {"event_sources"}
+_TYPED_COLS_V11 = INT_COLS_V11 | FLOAT_COLS_V11 | BOOL_COLS_V11 | LIST_COLS_V11
+
+END_EVENTS = ("close_start", "open_start", "contact_start", "contact_end", "other")
+BOUNDARY_SOURCES_V11 = ("signal", "vlm", "coarse", "crawl")
+ATTEMPT_OUTCOMES = ("success", "failed", "aborted")
+COARSE_MODES = ("frames", "video")
+SUBTASK_READ_V11 = ["end_event", "boundary_source", "coarse_end_frame", "crawl_calls", "attempt_outcome",
+                    "event_sources"]
+
+
+def _missing(v: Any) -> bool:
+    if v is None or v is pd.NA or v is pd.NaT:
+        return True
+    return isinstance(v, float) and v != v
+
+
+def _join(values: Any) -> str | None:
+    """A list of names as comma-joined text (a string passes through; None and missing stay None)."""
+    if _missing(values):
+        return None
+    if isinstance(values, str):
+        return values
+    return ",".join(str(v) for v in values)
+
+
+def _split(value: Any) -> list[str] | None:
+    if _missing(value):
+        return None
+    if isinstance(value, (list, tuple)):
+        return [str(v) for v in value]
+    return [p for p in str(value).split(",") if p]
+
+
+def _as_int(v: Any) -> int | None:
+    if _missing(v) or isinstance(v, bool):
+        return None
+    try:
+        return int(v)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _as_float(v: Any) -> float | None:
+    if _missing(v) or isinstance(v, bool):
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_bool(v: Any) -> bool | None:
+    if _missing(v):
+        return None
+    if isinstance(v, str):
+        low = v.strip().lower()
+        if low in ("true", "1", "yes"):
+            return True
+        if low in ("false", "0", "no"):
+            return False
+        return None
+    return bool(v)
+
+
+def _typed(col: str, v: Any) -> Any:
+    if col in INT_COLS_V11:
+        return _as_int(v)
+    if col in FLOAT_COLS_V11:
+        return _as_float(v)
+    if col in BOOL_COLS_V11:
+        return _as_bool(v)
+    if col in LIST_COLS_V11:
+        return _split(v)
+    return None if _missing(v) else v
+
+
+def _getter(row: Any):
+    if hasattr(row, "get"):
+        return row.get
+    return lambda k, d=None: getattr(row, k, d)
+
+
+# ------------------------------------------------------------------------------------------------ v1.1 writing
+def subtask_row_fields_v11(segment: dict[str, Any], event_sources: Any = None) -> dict[str, Any]:
+    """The v1.1 fields of one subtask row, from a v1.1 segment dict (absent keys stay None)."""
+    return {"end_event": segment.get("end_event"), "boundary_source": segment.get("boundary_source"),
+            "coarse_end_frame": segment.get("coarse_end_frame"), "crawl_calls": segment.get("crawl_calls"),
+            "attempt_outcome": segment.get("attempt_outcome"), "event_sources": _join(event_sources)}
+
+
+def episode_row_fields_v11(*, has_end_state: bool | None = None, goal_command: str | None = None,
+                           event_sources: Any = None, coarse_mode: str | None = None,
+                           coarse_fps: float | None = None, crawl_enabled: bool | None = None,
+                           crawl_model: str | None = None) -> dict[str, Any]:
+    """The v1.1 fields of an ``episode_metadata`` row."""
+    return {"has_end_state": has_end_state, "goal_command": goal_command, "event_sources": _join(event_sources),
+            "coarse_mode": coarse_mode, "coarse_fps": coarse_fps, "crawl_enabled": crawl_enabled,
+            "crawl_model": crawl_model}
+
+
+def add_v11_fields(rows: list[dict[str, Any]], segments: list[dict[str, Any]], *, event_sources: Any = None,
+                   episode_fields: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Copies of one episode's v7 rows (from :func:`episode_rows`) with the v1.1 fields added.
+
+    Subtask rows take their fields from ``segments[segment_idx]``; the ``episode_metadata`` row takes
+    ``episode_fields`` (the keyword arguments of :func:`episode_row_fields_v11`), with ``event_sources``
+    from the argument when ``episode_fields`` does not name it. Other rows are copied unchanged.
+    """
+    ep = dict(episode_fields or {})
+    ep.setdefault("event_sources", event_sources)
+    ep_fields = episode_row_fields_v11(**ep)
+    out = []
+    for r in rows:
+        row = dict(r)
+        kind = row.get("record_type")
+        if kind == "subtask":
+            i = _as_int(row.get("segment_idx"))
+            seg = segments[i] if i is not None and 0 <= i < len(segments) else {}
+            row.update(subtask_row_fields_v11(seg, event_sources))
+        elif kind == "episode_metadata":
+            row.update(ep_fields)
+        out.append(row)
+    return out
+
+
+def validate_v11_row(row: dict[str, Any]) -> list[str]:
+    """Problems with the v1.1 fields of one row (None is always allowed: the fields are optional)."""
+    problems = []
+    for col, allowed in (("end_event", END_EVENTS), ("boundary_source", BOUNDARY_SOURCES_V11),
+                         ("attempt_outcome", ATTEMPT_OUTCOMES), ("coarse_mode", COARSE_MODES)):
+        v = row.get(col)
+        if not _missing(v) and v not in allowed:
+            problems.append(f"{col} {v!r} is not one of {', '.join(allowed)}")
+    for col in ("coarse_end_frame", "crawl_calls"):
+        v = row.get(col)
+        if not _missing(v) and (_as_int(v) is None or _as_int(v) < 0):
+            problems.append(f"{col} {v!r} is not a non-negative integer")
+    return problems
+
+
+def to_dataframe_v11(rows: list[dict[str, Any]]) -> pd.DataFrame:
+    """As :func:`to_dataframe_v7`, with the v1.1 columns (``COLUMNS_V11``) and their types."""
+    frame = pd.DataFrame(rows)
+    for col in COLUMNS_V11:
+        if col not in frame.columns:
+            frame[col] = None
+    frame["_ro"] = frame["record_type"].map(RECORD_ORDER).fillna(9)
+    frame["_seg"] = pd.to_numeric(frame["segment_idx"], errors="coerce").fillna(-1)
+    frame["_i"] = range(len(frame))
+    frame = frame.sort_values(["episode_id", "arm", "_ro", "_seg", "_i"], na_position="first")
+    frame = frame.drop(columns=["_ro", "_seg", "_i"])[COLUMNS_V11].reset_index(drop=True)
+    for col in COLUMNS_V11:
+        if col in INT_COLS_V11:
+            frame[col] = pd.to_numeric(frame[col], errors="coerce").astype("Int64")
+        elif col in FLOAT_COLS_V11:
+            frame[col] = pd.to_numeric(frame[col], errors="coerce").astype("float64")
+        elif col == "mistake":
+            frame[col] = frame[col].astype("boolean")
+        elif col in BOOL_COLS_V11:
+            frame[col] = frame[col].map(_as_bool).astype("boolean")
+        elif col in LIST_COLS_V11:
+            frame[col] = frame[col].map(_join)
+        else:
+            frame[col] = frame[col].map(lambda v: None if v is None or (isinstance(v, float) and v != v) else str(v))
+    return frame
+
+
+def write_v11(rows: list[dict[str, Any]], out_dir: str | Path) -> Path:
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / ANNOTATIONS_FILENAME
+    to_dataframe_v11(rows).to_parquet(path, index=False)
+    return path
+
+
+# ------------------------------------------------------------------------------------------------ v1.1 reading
+def read_v11(path: str | Path) -> pd.DataFrame:
+    """A v7 or v1.1 annotations file (or its folder), with every ``COLUMNS_V11`` column present."""
+    from .schema import read_annotations
+
+    frame = read_annotations(path)
+    for col in COLUMNS_V11:
+        if col not in frame.columns:
+            frame[col] = None
+    return frame
+
+
+def subtask_fields_v11(row: Any) -> dict[str, Any]:
+    """The v1.1 fields of a subtask row (a dict or a pandas row), typed, None where absent."""
+    get = _getter(row)
+    return {c: _typed(c, get(c, None)) for c in SUBTASK_READ_V11}
+
+
+def episode_fields_v11(row: Any) -> dict[str, Any]:
+    """The v1.1 fields of an ``episode_metadata`` row (a dict or a pandas row), typed, None where absent."""
+    get = _getter(row)
+    return {c: _typed(c, get(c, None)) for c in EPISODE_V11}
+
+
+def _clean_record(rec: dict[str, Any]) -> dict[str, Any]:
+    return {k: _typed(k, v) if k in _TYPED_COLS_V11 else (None if _missing(v) else v) for k, v in rec.items()}
+
+
+def _select(frame: pd.DataFrame, episode_id: str, arm: str | None, kind: str) -> list[dict[str, Any]]:
+    sel = (frame["episode_id"].astype(str) == str(episode_id)) & (frame["record_type"] == kind)
+    if arm is not None and "arm" in frame.columns:
+        sel &= frame["arm"].astype(str) == str(arm)
+    return frame[sel].to_dict("records")
+
+
+def subtask_records_v11(frame: pd.DataFrame, episode_id: str, arm: str | None = None) -> list[dict[str, Any]]:
+    """Subtask rows of one episode (and arm) in segment order, typed, with every v1.1 field (None in a v7
+    file)."""
+    out = []
+    for rec in _select(frame, episode_id, arm, "subtask"):
+        clean = _clean_record(rec)
+        clean.update(subtask_fields_v11(rec))
+        out.append(clean)
+    return sorted(out, key=lambda r: (r.get("segment_idx") is None, r.get("segment_idx") or 0))
+
+
+def episode_record_v11(frame: pd.DataFrame, episode_id: str, arm: str | None = None) -> dict[str, Any] | None:
+    """The ``episode_metadata`` row of one episode (and arm), typed, with every v1.1 field (None in v7)."""
+    recs = _select(frame, episode_id, arm, "episode_metadata")
+    if not recs:
+        return None
+    clean = _clean_record(recs[0])
+    clean.update(episode_fields_v11(recs[0]))
+    return clean
+
+
+def fill_attempt_outcome(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Copies of segments with ``attempt_outcome`` derived where it is missing (SPEC_V1_1 4).
+
+    The v7 rule marked every phase of a failed attempt ``outcome: failed``, so an attempt is ``failed``
+    when any of its phases failed, else ``aborted`` when any was aborted, else ``success``. Segments that
+    already carry an ``attempt_outcome`` keep it.
+    """
+    by_attempt: dict[int | None, list[str]] = {}
+    for s in segments:
+        by_attempt.setdefault(_as_int(s.get("attempt_idx")), []).append(str(s.get("outcome") or ""))
+    derived = {idx: "failed" if "failed" in outs else ("aborted" if "aborted" in outs else "success")
+               for idx, outs in by_attempt.items()}
+    out = []
+    for s in segments:
+        seg = dict(s)
+        if _missing(seg.get("attempt_outcome")):
+            seg["attempt_outcome"] = derived[_as_int(seg.get("attempt_idx"))]
+        out.append(seg)
+    return out
