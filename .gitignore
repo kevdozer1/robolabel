@@ -14,7 +14,7 @@ venv/
 .ruff_cache/
 .mypy_cache/
 
-# Secrets — never commit credentials
+# Secrets: never commit credentials
 .secrets/
 .env
 *.key
@@ -57,9 +57,10 @@ run_out/
 
 # ---------------------------------------------------------------------------
 # Repo hygiene: ship the functionality + its user docs, not the internal process.
-# The repo tracks the package (src/), packaging, and the user-facing docs
-# (README, CONFIG, SCHEMA, PORTING). Everything below is kept locally but gated
-# out of the commit so internal reports / tests / helper scripts never re-enter.
+# The repo tracks the package (src/), packaging, the test suite (tests/, run by CI
+# with no network), and the user-facing docs (README, CONFIG, SCHEMA, PORTING).
+# Everything below is kept locally but gated out of the commit so internal
+# reports and helper scripts never re-enter.
 # ---------------------------------------------------------------------------
 
 # Internal reports, audits, and process notes (regenerable / local-only).
@@ -86,8 +87,8 @@ RUN_*.md
 /docs/figures/*
 !/docs/figures/grounded_annotations.gif
 
-# Tests and helper/build scripts — not part of the installed package.
-/tests/
+# Helper/build scripts: local-only, not part of the installed package. The tests
+# are tracked; the few that exercise a script from here skip when it is absent.
 /scripts/
 
 # Loose generated metric artifacts.
