@@ -1,8 +1,8 @@
 # Porting robolabel to a dataset
 
-## Standard LeRobot dataset — you provide nothing
+## Standard LeRobot dataset: you provide nothing
 
-For a LeRobot dataset, robolabel **auto-detects everything it needs from the metadata** — you
+For a LeRobot dataset, robolabel **auto-detects everything it needs from the metadata**: you
 give only `source: lerobot` and the `target` repo id (or local path). Auto-detected, with zero
 config:
 
@@ -20,7 +20,7 @@ run:
 
 That's the whole story for LeRobot. (`robolabel run` prints what it detected, so you can verify.)
 
-## Non-LeRobot input (DirectoryAdapter, raw mp4 folders) — one tiny config
+## Non-LeRobot input (DirectoryAdapter, raw mp4 folders): one tiny config
 
 A bare folder of videos carries none of that metadata, so the **only** thing a non-LeRobot input
 needs is a small JSON describing the action layout (and, optionally, a task-specific phase
@@ -43,7 +43,7 @@ run:
     directory_config: ./my_dataset.json
 ```
 
-- `control_space`: `joint` or `ee` (the action coordinate frame — see `control_modality` in
+- `control_space`: `joint` or `ee` (the action coordinate frame; see `control_modality` in
   `SCHEMA.md`). Only needed if you enable the `control` module.
 - `arm_dims` / `gripper_dims`: 0-based indices into your action vector. Only needed for `control`
   (and `active_dof`) and `speed`.
@@ -51,4 +51,4 @@ run:
   task family; the default open-vocab path needs nothing here.
 
 If you enable only `segmentation` + `quality` (the default), even a non-LeRobot folder needs no
-config at all — those modules read frames, not actions.
+config at all, since those modules read frames, not actions.

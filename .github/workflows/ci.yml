@@ -2,7 +2,6 @@ name: ci
 
 on:
   push:
-    branches: [main]
   pull_request:
 
 jobs:
@@ -32,7 +31,7 @@ jobs:
         run: |
           robolabel demo --out ci_demo_out --episodes 3
           test -f ci_demo_out/annotations.parquet
-          # Assert the sidecar has all three record types.
+          # Assert the annotations file has all three record types.
           python - <<'PY'
           from robolabel.schema import read_annotations
           df = read_annotations("ci_demo_out")
@@ -41,6 +40,11 @@ jobs:
           assert df["episode_id"].nunique() == 3
           print("offline demo integration test OK:", len(df), "rows")
           PY
+
+      - name: Tests (no network)
+        run: |
+          pip install -e '.[dev,eval,video,hub]' pytest-socket
+          pytest -q -p no:cacheprovider --disable-socket --allow-unix-socket --allow-hosts=127.0.0.1
 
       - name: Forbidden-path / secret audit
         run: |
