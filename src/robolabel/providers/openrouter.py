@@ -75,22 +75,42 @@ def _sha(data: bytes) -> str:
 
 
 class _RequestsTransport:
-    """Default HTTP transport. Returns (status, json or None, text, headers); raises TimeoutError."""
+    """Default HTTP transport. Returns (status, json or None, text, headers); raises TimeoutError.
 
-    def __init__(self) -> None:
+    ``timeout`` is the read timeout (no byte for that long). OpenRouter keeps long non-streamed
+    generations alive with filler bytes, so a separate total deadline (``total_deadline_s``) bounds
+    every POST; a POST past it is abandoned and reported as a timeout.
+    """
+
+    def __init__(self, total_deadline_s: float = 1200.0) -> None:
         import requests
 
         self._requests = requests
         self._session = requests.Session()
+        self.total_deadline_s = total_deadline_s
 
     def post(self, url: str, body: dict[str, Any], headers: dict[str, str], timeout: float):
-        try:
-            r = self._session.post(url, json=body, headers=headers, timeout=timeout)
-        except self._requests.Timeout as exc:
-            raise TimeoutError("request timed out") from exc
-        except self._requests.RequestException as exc:
-            raise ConnectionError(type(exc).__name__) from exc
-        return _parse(r)
+        box: dict[str, Any] = {}
+
+        def run() -> None:
+            try:
+                box["r"] = self._requests.post(url, json=body, headers=headers, timeout=timeout)
+            except BaseException as exc:  # noqa: BLE001 - handed to the caller below
+                box["e"] = exc
+
+        th = threading.Thread(target=run, daemon=True)
+        th.start()
+        th.join(self.total_deadline_s)
+        if th.is_alive():
+            raise TimeoutError(f"no complete response within {self.total_deadline_s:.0f} s")
+        exc = box.get("e")
+        if exc is not None:
+            if isinstance(exc, self._requests.Timeout):
+                raise TimeoutError("request timed out") from exc
+            if isinstance(exc, self._requests.RequestException):
+                raise ConnectionError(type(exc).__name__) from exc
+            raise exc
+        return _parse(box["r"])
 
     def get(self, url: str, headers: dict[str, str], timeout: float):
         try:

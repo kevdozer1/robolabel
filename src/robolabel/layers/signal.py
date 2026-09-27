@@ -451,8 +451,11 @@ def keyframe_plan(attempts: list[dict[str, Any]], n: int, cal: Calibration, max_
         return kept
     first_idx = attempts[0]["attempt_idx"] if attempts else 0
     last_idx = attempts[-1]["attempt_idx"] if attempts else 0
-    must = [f for f in kept if cands[f][0] == 3 or cands[f][1] in (first_idx, last_idx)]
-    out = sorted(must)[:max_frames]
+    anchors = [f for f in kept if cands[f][0] == 3]  # frame 0 and the last frame always stay
+    # then the event onsets of the first and last attempts, then their settled frames (last attempt first)
+    onsets = [f for f in kept if cands[f][0] == 2 and cands[f][1] in (first_idx, last_idx)]
+    settled = [f for f in kept if cands[f][0] == 1 and cands[f][1] == last_idx] +         [f for f in kept if cands[f][0] == 1 and cands[f][1] == first_idx and first_idx != last_idx]
+    out = anchors + (onsets + settled)[: max(0, max_frames - len(anchors))]
     for f in kept:
         if len(out) >= max_frames:
             break
