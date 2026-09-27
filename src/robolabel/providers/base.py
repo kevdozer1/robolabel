@@ -314,3 +314,13 @@ def schema_sha256(schema: dict[str, Any]) -> str:
     import hashlib
 
     return hashlib.sha256(json.dumps(schema, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+@dataclass
+class VideoPart:
+    """One video clip sent as its own message part (mp4 bytes). Receipts keep its hash, never the bytes."""
+
+    data: bytes
+    mime: str = "video/mp4"
+    label: str = ""
+    seconds: float = 0.0  # clip duration, used for the worst-case input estimate

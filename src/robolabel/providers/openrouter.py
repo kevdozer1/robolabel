@@ -42,6 +42,7 @@ from .base import (
     ImagePart,
     ProviderResponse,
     TextPart,
+    VideoPart,
     VLMProvider,
     load_secret,
     make_contact_sheet,
@@ -199,6 +200,9 @@ class OpenRouterProvider(VLMProvider):
         for p in req.parts:
             if isinstance(p, ImagePart):
                 content.append({"type": "image_url", "image_url": {"url": _b64_jpeg(p.jpeg)}})
+            elif isinstance(p, VideoPart):
+                url = f"data:{p.mime};base64," + base64.b64encode(p.data).decode("ascii")
+                content.append({"type": "video_url", "video_url": {"url": url}})
             else:
                 content.append({"type": "text", "text": p.text if isinstance(p, TextPart) else str(p)})
         if mode != "json_schema_strict":
@@ -293,8 +297,11 @@ class OpenRouterProvider(VLMProvider):
         from ..spend_guard import PaidCallsStopped, SpendRefused
 
         prompt = self._prompt_text(req)
-        media = [_sha(p.jpeg) for p in req.parts if isinstance(p, ImagePart)]
-        n_images = len(media)
+        media = [_sha(p.jpeg) if isinstance(p, ImagePart) else _sha(p.data) for p in req.parts
+                 if isinstance(p, (ImagePart, VideoPart))]
+        n_images = sum(1 for p in req.parts if isinstance(p, ImagePart))
+        # a video counts as one image-equivalent per second of clip (worst-case input estimate only)
+        n_images += sum(max(1, int(round(p.seconds))) for p in req.parts if isinstance(p, VideoPart))
         text_chars = len(prompt) + len(json.dumps(req.schema))
         t_start = time.perf_counter()
         attempts: list[dict[str, Any]] = []
