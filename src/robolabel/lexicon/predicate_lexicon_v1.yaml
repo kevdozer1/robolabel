@@ -1,0 +1,123 @@
+# Predicate lexicon v1: end-of-episode requirement predicates and their free-text aliases.
+#
+# Content of MEASUREMENT_SPEC Appendix B. Read by robolabel.eval.lexicon.
+# status is "draft" until the lexicon is frozen, which happens before any held-out run. After the
+# freeze this file never changes; a change means a new version file.
+# Every alias is quoted on purpose: YAML reads a bare on, off, yes or no as a boolean.
+status: draft
+version: predicate_lexicon_v1
+source: MEASUREMENT_SPEC.md Appendix B
+
+# Anything that maps to no predicate is "other" with the text kept. An "other" item can only match
+# a gold "other" item with the same text after normalization.
+other: other
+
+# Mapping free text: an exact predicate name wins (underscores and spaces are the same). Then the
+# aliases are matched as whole words or whole phrases, longest alias first; ties go to the order
+# below. Each predicate's own name, with spaces for underscores, is also an alias. No inflection.
+predicates:
+  - name: inside
+    applies_to: [object, ref_object]
+    value: bool
+    aliases: ["in", "into", "within", "inside of"]
+  - name: on_top_of
+    applies_to: [object, ref_object]
+    value: bool
+    aliases: ["on", "onto", "on top of", "stacked on", "resting on"]
+  - name: touching
+    applies_to: [object, ref_object]
+    value: bool
+    aliases: ["touching", "in contact with", "against"]
+  - name: in_gripper
+    applies_to: [object]
+    value: bool
+    aliases: ["held", "in the gripper", "grasped"]
+  - name: lifted
+    applies_to: [object]
+    value: bool
+    aliases: ["lifted", "raised", "off the table"]
+  - name: at_location
+    applies_to: [object, region]
+    value: bool
+    note: "the region is named in ref_object"
+    aliases: ["at", "next to", "beside", "near"]
+  - name: unchanged
+    applies_to: [object]
+    value: bool
+    aliases: ["untouched", "stays", "not moved"]
+  - name: activated
+    applies_to: [object]
+    value: bool
+    note: "the object is a control"
+    aliases: ["activated", "switched on", "turned on", "latched", "lit"]
+  - name: state
+    applies_to: [object]
+    value: string
+    note: "multi-valued states such as open, closed, up, down, position N; on and off use activated"
+    aliases: ["open", "closed", "up", "down", "position"]
+  - name: holding
+    applies_to: [robot, ref_object]
+    value: bool
+    note: "ref_object null means any object; holding nothing is holding, ref_object null, value false"
+    aliases: ["holding", "carrying", "holding nothing"]
+  - name: gripper_open
+    applies_to: [robot]
+    value: bool
+    aliases: ["gripper open", "fingers open"]
+  - name: gripper_closed
+    applies_to: [robot]
+    value: bool
+    aliases: ["gripper closed"]
+  - name: withdrawn
+    applies_to: [robot]
+    value: bool
+    aliases: ["withdrawn", "clear of", "away from", "retracted"]
+  - name: at_home_pose
+    applies_to: [robot]
+    value: bool
+    aliases: ["home", "rest pose", "start pose"]
+  - name: near_object
+    applies_to: [robot, ref_object]
+    value: bool
+    aliases: ["above", "over", "at the object"]
+  - name: tool_lifted
+    applies_to: [robot_tool]
+    value: bool
+    aliases: ["pen up", "pen lifted", "tool off the surface"]
+
+# Robot ending slots every gold episode fills (spec 3.4.6): holding, one gripper item, one position
+# item. gold.html and robolabel.eval.gold_v2.warnings_for_episode warn when one is missing.
+robot_ending_slots:
+  holding: [holding]
+  gripper: [gripper_open, gripper_closed]
+  position: [withdrawn, at_home_pose, near_object]
+
+# Destination category to placement relation, used by the compiled goal (spec 4.0: "inside or
+# on_top_of chosen by the destination's category in the lexicon, at_location if unknown") and by
+# the coarse "put" text. Tonight's reading: the spec names the rule but not the table, so this
+# table is a draft choice. Categories not listed map to at_location. Also tonight's reading: when a
+# destination has no listed category (a free-text name such as "the wooden tray"), the last listed
+# word in the head of its name decides; the head ends at the first preposition after the first
+# word, so "bowl between the plate and the ramekin" counts as a bowl.
+destination_relation_by_category:
+  container: inside
+  bowl: inside
+  basket: inside
+  box: inside
+  cup: inside
+  bin: inside
+  drawer: inside
+  plate: on_top_of
+  tray: on_top_of
+  block: on_top_of
+  cloth: on_top_of
+  shelf: on_top_of
+  table: on_top_of
+  board: on_top_of
+default_relation: at_location
+
+# Word used for the relation in coarse text ("put the red cube in the tray").
+coarse_relation_words:
+  inside: "in"
+  on_top_of: "on"
+  at_location: "at"

@@ -1,0 +1,183 @@
+# robolabel price table (MEASUREMENT_SPEC 9.3). Read by robolabel.eval.prices.PriceTable.
+#
+# Units: USD per million tokens, everywhere in this file.
+#
+# Fields per model:
+#   price_in, price_out   sync prompt and completion prices. Reasoning (thinking) tokens are billed
+#                         as output tokens.
+#   cached_in             the input_cache_read price, or null when none is listed (cached tokens are
+#                         then billed at the input price). Cache writes are not modeled.
+#   batch_in, batch_out   the model's ":batch" variant, only when it is cheaper than sync. null means
+#                         there is no cheaper batch variant, so the batch-equivalent cost equals the
+#                         sync cost and a real batch call is not priced (lookup raises).
+#   effective_from        the first date the price was observed (not the vendor's launch date).
+#   effective_to          the last day the price applies, or null when no end is announced.
+#   source_url, accessed  where and when the price was read.
+#
+# Per-modality prices: none recorded. The 2026-09-27 catalogue read gave prompt, completion and
+# input_cache_read prices only, so image, video and audio input tokens are priced at price_in
+# (unverified per model).
+#
+# The OpenRouter prices were read from the live catalogue at 2026-09-27T08:26Z and equal the
+# 2026-09-26 read in the tuneup config (models.yaml). Vendor prices are unverified beyond that read.
+# Any change to this file changes the table version (version + first 12 hex chars of the file's
+# SHA-256), which every receipt records.
+
+version: "2026-09-27"
+currency: USD
+unit: usd_per_million_tokens
+
+providers:
+  openrouter:
+    anthropic/claude-opus-5.5:
+      price_in: 4.00
+      price_out: 20.00
+      cached_in: 0.20
+      batch_in: 2.00
+      batch_out: 10.00
+      effective_from: "2026-09-26"
+      effective_to: null
+      source_url: https://openrouter.ai/api/v1/models
+      accessed: "2026-09-27"
+      notes: >-
+        models.yaml key opus. Batch prices from the anthropic/claude-opus-5.5:batch variant.
+        Cache-write pricing is not modeled.
+
+    openai/gpt-6-sol:
+      price_in: 2.00
+      price_out: 10.00
+      cached_in: 0.20
+      batch_in: 1.00
+      batch_out: 5.00
+      effective_from: "2026-09-26"
+      effective_to: null
+      source_url: https://openrouter.ai/api/v1/models
+      accessed: "2026-09-27"
+      notes: >-
+        models.yaml key sol. Batch prices from the openai/gpt-6-sol:batch variant. A higher
+        long-context price applies above 272,000 prompt tokens; it is not modeled here.
+
+    openai/gpt-6-astra:
+      price_in: 10.00
+      price_out: 50.00
+      cached_in: 1.00
+      batch_in: 5.00
+      batch_out: 25.00
+      effective_from: "2026-09-26"
+      effective_to: null
+      source_url: https://openrouter.ai/api/v1/models
+      accessed: "2026-09-27"
+      notes: >-
+        models.yaml key astra. Batch prices from the openai/gpt-6-astra:batch variant. A higher
+        long-context price applies above 272,000 prompt tokens; it is not modeled here.
+
+    openai/gpt-6-luna:
+      price_in: 0.10
+      price_out: 0.50
+      cached_in: 0.01
+      batch_in: 0.05
+      batch_out: 0.25
+      effective_from: "2026-09-26"
+      effective_to: null
+      source_url: https://openrouter.ai/api/v1/models
+      accessed: "2026-09-27"
+      notes: >-
+        models.yaml key luna. Batch prices from the openai/gpt-6-luna:batch variant. A higher
+        long-context price applies above 272,000 prompt tokens; it is not modeled here.
+
+    google/gemini-3.8-flash:
+      price_in: 0.75
+      price_out: 3.75
+      cached_in: 0.075
+      batch_in: 0.375
+      batch_out: 1.875
+      effective_from: "2026-09-26"
+      effective_to: "2026-12-31"
+      source_url: https://openrouter.ai/api/v1/models
+      accessed: "2026-09-27"
+      notes: >-
+        models.yaml key gemini_flash, also the legacy arm b2b@gemini_flash. Promotional price until
+        2026-12-31, then 1.50 / 7.50 (PLAN 3.5). The batch prices (google/gemini-3.8-flash:batch)
+        and the cached price are the ones listed during the promotion.
+
+    qwen/qwen3.8-max-0902:
+      price_in: 2.00
+      price_out: 6.00
+      cached_in: 0.25
+      batch_in: null
+      batch_out: null
+      effective_from: "2026-09-26"
+      effective_to: null
+      source_url: https://openrouter.ai/api/v1/models
+      accessed: "2026-09-27"
+      notes: >-
+        models.yaml key qwen_max. No :batch variant listed, so batch-equivalent = sync.
+        Not qwen/qwen3.8-max-prime.
+
+    meta/muse-spark-1.3:
+      price_in: 1.25
+      price_out: 4.25
+      cached_in: 0.15
+      batch_in: null
+      batch_out: null
+      effective_from: "2026-09-26"
+      effective_to: null
+      source_url: https://openrouter.ai/api/v1/models
+      accessed: "2026-09-27"
+      notes: >-
+        models.yaml key muse. No :batch variant listed, so batch-equivalent = sync.
+        Not the -contributor variant.
+
+    xiaomi/mimo-v2.6-pro:
+      price_in: 0.435
+      price_out: 0.87
+      cached_in: 0.0036
+      batch_in: null
+      batch_out: null
+      effective_from: "2026-09-26"
+      effective_to: null
+      source_url: https://openrouter.ai/api/v1/models
+      accessed: "2026-09-27"
+      notes: models.yaml key mimo. No :batch variant listed, so batch-equivalent = sync.
+
+    deepseek/deepseek-v4.1-flash:
+      price_in: 0.035
+      price_out: 0.29
+      cached_in: 0.001
+      batch_in: null
+      batch_out: null
+      effective_from: "2026-09-26"
+      effective_to: null
+      source_url: https://openrouter.ai/api/v1/models
+      accessed: "2026-09-27"
+      notes: >-
+        models.yaml key deepseek_flash. Its :batch variant is listed at 0.112 / 0.336, dearer than
+        sync, so batch_in and batch_out are null and batch-equivalent = sync.
+
+  mock:
+    "*":
+      price_in: 0.0
+      price_out: 0.0
+      cached_in: 0.0
+      batch_in: 0.0
+      batch_out: 0.0
+      effective_from: null
+      effective_to: null
+      source_url: null
+      accessed: null
+      notes: The offline mock provider makes no network call and is free. "*" matches every model id.
+
+  jev:
+    jev-1.13.0:
+      price_in: 0.042
+      price_out: 0.0
+      cached_in: null
+      batch_in: null
+      batch_out: null
+      effective_from: "2026-09-26"
+      effective_to: null
+      source_url: https://docs.typesafe.ai
+      accessed: "2026-09-26"
+      notes: >-
+        Listed for completeness (spec 9.3); not called tonight. Input tokens only, output free.
+        Jev receipts record usage.input_tokens, usage.output_tokens and the question count.

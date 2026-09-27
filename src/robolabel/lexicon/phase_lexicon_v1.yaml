@@ -1,0 +1,105 @@
+# Phase lexicon v1: canonical phase classes, the free-text mapping and the coarse grouping rule.
+#
+# Content of MEASUREMENT_SPEC Appendix A. Read by robolabel.eval.lexicon.
+# status is "draft" until the lexicon is frozen, which happens before any held-out run. After the
+# freeze this file never changes; a change means a new version file.
+status: draft
+version: phase_lexicon_v1
+source: MEASUREMENT_SPEC.md Appendix A
+
+classes:
+  - approach
+  - grasp
+  - transport
+  - release
+  - retract
+  - press
+  - pour
+  - insert
+  - fold
+  - wipe
+  - push
+  - pull
+  - rotate
+  - open
+  - close
+  - other
+
+# What a phase name maps to when no pattern and no keyword matches (counts as wrong in S1).
+unmapped: unmapped
+
+# Matching. The text is lowercased and split into words (runs of letters and digits). A pattern or
+# keyword matches a whole word or a whole phrase, never part of a word ("open" does not match
+# "reopen"). The first word of a pattern or keyword also matches its simple inflections: suffix s,
+# es, ed or ing, with the regular spelling changes (final e dropped: placing, placed; final
+# consonant doubled: dropped, gripping; y to i: carries, carried). This is tonight's reading of the
+# spec, which does not say whether inflected forms match.
+matching:
+  case: lower
+  word_boundaries: true
+  inflect_first_word: [s, es, ed, ing]
+
+# Checked first, in this order; the first pattern found in the text wins.
+multi_word_patterns:
+  - {pattern: "open gripper", class: release}
+  - {pattern: "open the gripper", class: release}
+  - {pattern: "open fingers", class: release}
+  - {pattern: "let go", class: release}
+  - {pattern: "close gripper", class: grasp}
+  - {pattern: "close the gripper", class: grasp}
+  - {pattern: "close fingers", class: grasp}
+  - {pattern: "move away", class: retract}
+  - {pattern: "go home", class: retract}
+  - {pattern: "back away", class: retract}
+  - {pattern: "return to home", class: retract}
+  - {pattern: "push button", class: press}
+  - {pattern: "push the button", class: press}
+
+# Checked after the patterns, in priority order; the first class with a keyword in the text wins.
+keyword_priority:
+  - {priority: 1, class: retract, keywords: ["retract", "withdraw", "retreat", "return", "home", "reset"]}
+  - {priority: 2, class: release, keywords: ["release", "place", "put down", "set down", "deposit", "drop"]}
+  - {priority: 3, class: grasp, keywords: ["grasp", "grip", "grab", "pinch", "clamp", "pick"]}
+  - {priority: 4, class: press, keywords: ["press", "toggle", "switch", "flip", "activate"]}
+  - {priority: 5, class: pour, keywords: ["pour", "tilt"]}
+  - {priority: 6, class: insert, keywords: ["insert", "plug", "slot"]}
+  - {priority: 7, class: fold, keywords: ["fold"]}
+  - {priority: 8, class: wipe, keywords: ["wipe", "clean", "sweep"]}
+  - {priority: 9, class: open, keywords: ["open"]}
+  - {priority: 10, class: close, keywords: ["close", "shut"]}
+  - {priority: 11, class: rotate, keywords: ["rotate", "turn", "twist"]}
+  - {priority: 12, class: pull, keywords: ["pull", "drag"]}
+  - {priority: 13, class: push, keywords: ["push", "slide", "shove"]}
+  - {priority: 14, class: transport, keywords: ["transport", "carry", "move", "lift", "bring", "transfer", "raise", "lower"]}
+  - {priority: 15, class: approach, keywords: ["approach", "reach", "hover", "align", "position", "go to"]}
+
+# Legacy closed-vocabulary phases (rubric.yaml phase_vocabulary) map directly.
+legacy_mapping:
+  approach: approach
+  grasp: grasp
+  transport: transport
+  release-place: release
+  retract: retract
+  other: other
+
+# Coarse grouping rule (Appendix A), applied by robolabel.eval.lexicon.coarse_groups.
+coarse_grouping: >-
+  Walk the phases in order. An approach joins the next non-approach phase. grasp (with its approach)
+  is "pick up <target>". transport followed by release, insert or pour (and the following release)
+  is "put <target> <relation> <destination>" or "pour ..." or "insert ...". retract is "move the arm
+  away". press (with its approach) is "press <control>". Any other class forms its own group with
+  the preceding approach. Phases with outcome failed form their own group with mistake true, and
+  the group's text is the intended instruction.
+
+# Fixed coarse text templates (V_LITE L3). <relation> is the word of the destination's relation
+# (predicate lexicon coarse_relation_words). Objects are named by their names with "the" in front;
+# an unknown object is "the object".
+coarse_templates:
+  pick_up: "pick up {target}"
+  put: "put {target} {relation} {destination}"
+  pour: "pour {target} into {destination}"
+  insert: "insert {target} into {destination}"
+  retract: "move the arm away"
+  press: "press {target}"
+  other_class: "{phase_class} {target}"
+  unknown_object: "the object"
