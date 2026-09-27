@@ -1,0 +1,44 @@
+Describe what this robot episode was for: the end state it was meant to reach. The images are the first and the
+last frame from each camera; the line before each image names it.
+The dataset's task description is: "{task}".
+
+Objects in the scene:
+{inventory_lines}
+
+Scene facts at the first frame:
+{facts_first}
+
+Scene facts at the last frame:
+{facts_last}
+
+Robot state at the last frame, measured by the robot itself:
+{end_state_lines}
+
+Grasp attempts measured by the robot: {attempt_summary}
+
+Write:
+- objective_text: one plain sentence stating the intended end state, with state words (inside, on top of, activated),
+  never motion words (touch, move toward, reach);
+- primary_target: the ID of the object the task is about; primary_destination: the ID of where it should end up, or
+  "none";
+- requirements: the end-of-episode conditions. Every task-relevant object gets one end-state item (kind
+  object_end_state). The robot gets exactly these items (kind robot_end_state): holding, one of gripper_open or
+  gripper_closed, and one position item (withdrawn, at_home_pose or near_object). Every item has a value or status
+  unsure; never leave a mandatory item out.
+
+For each requirement:
+- predicate from: inside, on_top_of, touching, in_gripper, lifted, at_location, unchanged, activated, state, holding,
+  gripper_open, gripper_closed, withdrawn, at_home_pose, near_object, tool_lifted, other;
+- object and ref_object are object IDs or "none" (for holding, ref_object is the held object or "none"; "holding
+  nothing" is predicate holding, ref_object none, value false);
+- value is "true" or "false" (or the state word for predicate state);
+- status: required (the task description states it, or it must hold for the stated outcome to hold), incidental (seen
+  but neither stated nor necessary), or unsure;
+- unsure_kind: "perception" when the cameras cannot show the fact, "intent" when the fact is visible but the task
+  description does not settle whether it is required, "none" otherwise;
+- basis: task_string, physical_necessity or observed;
+- achieved: whether this episode reached it: true, false or unknown;
+- deciding_frame and deciding_camera: where the fact is best judged; visibility: for each camera, visible, partial or
+  not_visible at that frame; reason: a short reason.
+
+Nothing that happened only during a failed attempt is a requirement.

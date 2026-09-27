@@ -130,7 +130,7 @@ def available_providers() -> list[str]:
 def build_provider(name: str | None = None, model: str | None = None) -> VLMProvider:
     """Construct a provider by name (defaults to ``$ROBOVID_PROVIDER`` or mock)."""
     # Import side-effect: ensure built-in providers have registered themselves.
-    from . import gemini, mock, openai  # noqa: F401
+    from . import gemini, mock, openai, openrouter  # noqa: F401
 
     resolved = (name or os.environ.get("ROBOVID_PROVIDER") or "mock").strip().lower()
     if resolved not in _REGISTRY:
@@ -251,3 +251,66 @@ def extract_json(text: str) -> Any:
         if end <= start:
             raise
         return json.loads(cleaned[start : end + 1])
+
+
+# --------------------------------------------------------------------------- #
+# Multi-part calls (schema v7 layers). Additive: ``ask`` above is unchanged.
+# --------------------------------------------------------------------------- #
+@dataclass
+class TextPart:
+    text: str
+
+
+@dataclass
+class ImagePart:
+    """One JPEG image sent as its own message part. ``label`` goes into receipts, never the bytes."""
+
+    jpeg: bytes
+    label: str = ""
+
+
+@dataclass
+class CallRequest:
+    """One structured call: a system message, ordered text and image parts, and a JSON schema."""
+
+    step: str
+    system: str
+    parts: list[Any]
+    schema: dict[str, Any]
+    schema_name: str
+    max_tokens: int
+    reasoning: dict[str, Any] | None = None
+    context: dict[str, Any] = field(default_factory=dict)  # arm, episode_key, bucket, model_key, ...
+    image_tokens_per_image: float = 1500.0  # worst-case estimate until calibration measures it
+    start_mode: str = "json_schema_strict"
+    validate: Callable[[Any], list[str]] | None = None  # extra checks after the JSON schema
+
+
+@dataclass
+class CallResult:
+    """What a structured call produced. ``data`` is the parsed JSON when ``valid``."""
+
+    valid: bool
+    data: Any
+    text: str
+    status: str  # ok | invalid | refused | failed | unavailable | stopped
+    mode: str | None = None
+    finish_reason: str | None = None
+    usage: dict[str, Any] = field(default_factory=dict)
+    usd: float = 0.0
+    latency_s: float = 0.0
+    wall_s: float = 0.0
+    attempts: int = 0
+    retries: int = 0
+    repaired: bool = False
+    truncated_retry: bool = False
+    cache_hit: bool = False
+    error: str | None = None
+    generation_ids: list[str] = field(default_factory=list)
+    receipt: dict[str, Any] = field(default_factory=dict)
+
+
+def schema_sha256(schema: dict[str, Any]) -> str:
+    import hashlib
+
+    return hashlib.sha256(json.dumps(schema, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
