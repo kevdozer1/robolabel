@@ -55,6 +55,7 @@ For each segment give:
   - contact_start: the hand or a held tool starts touching an object or surface;
   - contact_end: the hand or a held tool stops touching an object or surface;
   - other: any other kind of boundary.
+  When the fingers of a gripper or hand close on an object to hold it, that boundary is close_start, not contact_start, even though the fingers then touch the object; when they open to let it go, it is open_start. Use contact_start and contact_end only for touches in which the fingers neither close nor open: a pressed control, a held tool on a surface, a hand that pushes or wipes.
 - target: {target_rule}
 - destination: {destination_rule}
 - attempt_idx, outcome, attempt_outcome and failure_type: as the rules below say.
