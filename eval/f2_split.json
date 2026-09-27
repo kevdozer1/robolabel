@@ -1,0 +1,171 @@
+{
+ "created": "2026-09-27",
+ "dev_gold": [
+  "F2/1267",
+  "F2/1275",
+  "F2/1325",
+  "F2/1352",
+  "F2/1362",
+  "F2/1382",
+  "F2/1410",
+  "F2/1424",
+  "F2/1500",
+  "F2/1506",
+  "F2/1516",
+  "F2/1538",
+  "F2/154",
+  "F2/1563",
+  "F2/1567",
+  "F2/1590",
+  "F2/1673",
+  "F2/227",
+  "F2/258",
+  "F2/261",
+  "F2/27",
+  "F2/290",
+  "F2/366",
+  "F2/81"
+ ],
+ "family": "F2",
+ "heldout_gold": [
+  "F2/1262",
+  "F2/1278",
+  "F2/1302",
+  "F2/1328",
+  "F2/1457",
+  "F2/1468",
+  "F2/1470",
+  "F2/1494",
+  "F2/1505",
+  "F2/1535",
+  "F2/1551",
+  "F2/1578",
+  "F2/1580",
+  "F2/1595",
+  "F2/1618",
+  "F2/1651",
+  "F2/178",
+  "F2/186",
+  "F2/193",
+  "F2/2",
+  "F2/245",
+  "F2/282",
+  "F2/59",
+  "F2/80"
+ ],
+ "note": "Every other episode of a chosen task inherits that task's split. Episodes of tasks not chosen belong to neither split.",
+ "repo_id": "lerobot/libero",
+ "revision": "a1aaacb7f6cd6ee5fb43120f673cebb0cfea7dd4",
+ "rng": "a fresh numpy.random.default_rng(20261001) created immediately before each shuffle (one generator per shuffle, never shared); shuffle with rng.permutation over the sorted list",
+ "rule": "for each suite (LIBERO-Spatial, LIBERO-10) sort its task strings alphabetically and shuffle; Spatial - first 2 tasks dev, next 2 held-out; LIBERO-10 - first 1 dev, next 1 held-out. Within each chosen task sort episodes by episode_index, shuffle, take the first 8 as gold episodes. Every other episode of a task inherits that task's split.",
+ "schema_version": "robolabel/split/v1",
+ "seed": 20261001,
+ "suite_counts": {
+  "libero_10": 10,
+  "libero_goal": 10,
+  "libero_object": 10,
+  "libero_spatial": 10
+ },
+ "suite_source": {
+  "sha256": "0c950df0a785aa55de968bb38ccd865d2017f71ddbe6f48cfd05ac0742b6d62d",
+  "url": "https://raw.githubusercontent.com/Lifelong-Robot-Learning/LIBERO/4f0dd188960c25b608babc7de34e1e20a9d1306f/libero/libero/benchmark/libero_suite_task_map.py"
+ },
+ "tasks": {
+  "pick up the black bowl between the plate and the ramekin and place it on the plate": {
+   "gold_episodes": [
+    1275,
+    1410,
+    1382,
+    1500,
+    1567,
+    1352,
+    1506,
+    1563
+   ],
+   "n_episodes": 45,
+   "order": 0,
+   "split": "dev",
+   "suite": "libero_spatial"
+  },
+  "pick up the black bowl in the top drawer of the wooden cabinet and place it on the plate": {
+   "gold_episodes": [
+    1494,
+    1505,
+    1595,
+    1551,
+    1262,
+    1470,
+    1651,
+    1302
+   ],
+   "n_episodes": 42,
+   "order": 2,
+   "split": "heldout",
+   "suite": "libero_spatial"
+  },
+  "pick up the black bowl on the cookie box and place it on the plate": {
+   "gold_episodes": [
+    1535,
+    1618,
+    1457,
+    1580,
+    1278,
+    1578,
+    1468,
+    1328
+   ],
+   "n_episodes": 43,
+   "order": 3,
+   "split": "heldout",
+   "suite": "libero_spatial"
+  },
+  "pick up the black bowl on the stove and place it on the plate": {
+   "gold_episodes": [
+    1424,
+    1538,
+    1673,
+    1267,
+    1516,
+    1325,
+    1590,
+    1362
+   ],
+   "n_episodes": 35,
+   "order": 1,
+   "split": "dev",
+   "suite": "libero_spatial"
+  },
+  "pick up the book and place it in the back compartment of the caddy": {
+   "gold_episodes": [
+    261,
+    227,
+    290,
+    258,
+    27,
+    366,
+    154,
+    81
+   ],
+   "n_episodes": 41,
+   "order": 0,
+   "split": "dev",
+   "suite": "libero_10"
+  },
+  "put the yellow and white mug in the microwave and close it": {
+   "gold_episodes": [
+    59,
+    186,
+    193,
+    2,
+    282,
+    178,
+    80,
+    245
+   ],
+   "n_episodes": 34,
+   "order": 1,
+   "split": "heldout",
+   "suite": "libero_10"
+  }
+ }
+}
