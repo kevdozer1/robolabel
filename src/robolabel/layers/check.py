@@ -144,7 +144,15 @@ def run_checks(segments: list[dict[str, Any]], coarse: list[dict[str, Any]], goa
         rows.append(_row(9, "fail" if bad else "pass", f"unknown references {bad}" if bad else "all references known"))
     # 10: coarse text equals the template rendering (no failure narrative)
     texts = [c.get("text", "") for c in coarse]
-    bad = [t for t in texts if _NARRATIVE.search(t.lower()) or not _TEMPLATE.match(t.lower())]
+    names = sorted({str(o.get("name", "")).lower() for o in objects if o.get("name")}, key=len, reverse=True)
+
+    def without_names(t: str) -> str:  # an object called "eye drops" is not a failure narrative
+        t = t.lower()
+        for nm in names:
+            t = t.replace(nm, " object ")
+        return t
+
+    bad = [t for t in texts if _NARRATIVE.search(without_names(t)) or not _TEMPLATE.match(t.lower())]
     rows.append(_row(10, "na" if not texts else ("fail" if bad else "pass"),
                      f"non-template coarse text: {bad[:2]}" if bad else "coarse text is the template rendering"))
 
