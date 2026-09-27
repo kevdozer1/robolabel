@@ -48,16 +48,18 @@ def run_checks(segments: list[dict[str, Any]], coarse: list[dict[str, Any]], goa
                if not any(s["start_frame"] <= o <= s["end_frame"] for o in openings)]
         rows.append(_row(2, "fail" if bad else "pass",
                          f"release segments {bad} contain no opening onset" if bad else "every release contains an opening"))
-    # 3: the object claimed in a grasp is in the gripper at the next keyframe where it is visible
-    if not (have_inventory and have_facts) or not grasps:
-        rows.append(_row(3, "na", "no inventory, no scene facts or no grasp"))
+    # 3: the object claimed in a (successful) grasp is in the gripper at the next keyframe, from the end of
+    # the grasp segment on, in some camera where it is visible; a failed grasp claims no hold
+    held_grasps = [s for s in grasps if s.get("outcome") == "success"]
+    if not (have_inventory and have_facts) or not held_grasps:
+        rows.append(_row(3, "na", "no inventory, no scene facts or no successful grasp"))
     else:
         fails, checked = [], 0
-        for s in grasps:
+        for s in held_grasps:
             tgt = s.get("target")
             if tgt in (None, "none", "unsure"):
                 continue
-            later = sorted({f["frame"] for f in facts if f["frame"] >= s["start_frame"]})
+            later = sorted({f["frame"] for f in facts if f["frame"] >= s["end_frame"]})
             if not later:
                 continue
             nxt = [f for f in facts if f["frame"] == later[0]]
