@@ -190,6 +190,12 @@
    "repo_id": "armnet/armnetbench_v01_lerobot_so101",
    "revision": "2e5e89aee0e7f081078d9d6ab3b279fc4b83ea84",
    "rule": "the held-out halves of the strata in eval/f3_split.json (spec 2.2)"
+  },
+  "F4": {
+   "episode_keys": [],
+   "repo_id": "armnet/busybox_multitask",
+   "revision": "eb656116832d18d112940b33db254f54eece4d9a",
+   "rule": "none: every selected F4 push-button episode is dev (spec 2.2); see eval/f4_split.json"
   }
  },
  "schema_version": "robolabel/heldout_ids/v1"

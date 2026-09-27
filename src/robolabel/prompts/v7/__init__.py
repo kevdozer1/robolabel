@@ -88,4 +88,14 @@ SCHEMAS: dict[str, dict[str, Any]] = {
     }),
 }
 
-MAX_TOKENS = {"scene_inventory": 3000, "scene_facts": 6000, "segments": 8000, "goal": 5000}
+TRI = _enum(["true", "false", "unsure"])
+SCHEMAS["end_state"] = _obj({
+    "target_name": S, "destination_name": S, "target_inside_destination": TRI, "target_on_top_of_destination": TRI,
+    "target_touching_destination": TRI, "target_lifted": TRI, "robot_holding_object": TRI, "gripper_near_target": TRI,
+})
+SCHEMAS["consensus_group"] = _obj({
+    "objective_text": S, "missed_predicates": _arr(_obj({"text": S, "reason": S})),
+})
+
+MAX_TOKENS = {"scene_inventory": 3000, "scene_facts": 6000, "segments": 8000, "goal": 5000, "end_state": 1500,
+              "consensus_group": 3000}
