@@ -1,7 +1,8 @@
 """Free and legacy arms of the sweep as view records (V_LITE "The other arms").
 
 * ``sig_only``: L1 events only. Phases by event order (approach, grasp, transport, release, retract);
-  empty, aborted or slipped attempts become failed approach and grasp segments; no targets; template
+  empty or slipped attempts become failed approach and grasp segments (aborted and unknown attempts
+  become ordinary approach and grasp segments); no targets; template
   text with "the object"; the compiled goal (spec 4.0) plus the L1 robot end state; outcome unknown.
   Close to baseline B3 and to A-segvlm without scene targets.
 * ``uniform5``: baseline B4, five equal segments with canonical phases.
@@ -57,7 +58,9 @@ def sig_only_segments(l1: dict[str, Any]) -> list[dict[str, Any]]:
         if on > cursor:
             segs.append(_seg(cursor, on - 1, "approach", attempt=i))
         if a["outcome"] in ("empty", "aborted", "slip", "unknown"):
-            failed = a["outcome"] != "unknown"
+            # V_LITE: only empty and slipped attempts are failed; an aborted close (the fingers opened
+            # again at once) or an unknown one is an ordinary approach and grasp
+            failed = a["outcome"] in ("empty", "slip")
             if segs and segs[-1]["phase_class"] == "approach" and failed:
                 segs[-1].update(outcome="failed", failure_type=a["failure_type"], mistake=True)
             end = int(a["opening_onset"]) - 1 if a.get("opening_onset") is not None else max(on, int(a["event_frame"]))

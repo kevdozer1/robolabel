@@ -3,10 +3,11 @@
 The model sees up to 28 frames of the first external camera (20 evenly spaced plus frames around the
 L1 gripper events) and up to 4 wrist frames after grasps, the inventory, and the L1 candidates and
 attempts as plain lines. Post-processing sorts the segments, makes them contiguous over 0..N-1 (a gap
-extends the earlier segment, an overlap is clipped at the later start), snaps a segment whose
-candidate is confirmed to that candidate's frame, checks targets against the inventory, renders coarse
-subtasks with the Appendix A grouping rule and fixed templates, and sets ``mistake`` for failed
-segments. Every repair is recorded.
+extends the earlier segment, an overlap is clipped at the later start), then snaps a segment whose
+candidate is confirmed to that candidate's frame (``boundary_source: signal`` only when the final end
+is that frame), checks targets against the inventory, renders coarse subtasks with the Appendix A
+grouping rule and fixed templates, and sets ``mistake`` for failed segments. Every repair, clamp and
+coercion is recorded.
 """
 
 from __future__ import annotations
@@ -85,52 +86,73 @@ def postprocess_segments(data: Any, num_frames: int, l1: dict[str, Any], objects
     segs: list[dict[str, Any]] = []
     for s in raw:
         if not isinstance(s, dict):
+            repairs.append("segments: a segment that is not an object was dropped")
             continue
         try:
             start, end = int(s.get("start_frame")), int(s.get("end_frame"))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             repairs.append("segments: a segment without integer frames was dropped")
             continue
-        start, end = max(0, min(start, last)), max(0, min(end, last))
+        if type(s.get("start_frame")) is not int or type(s.get("end_frame")) is not int:
+            repairs.append(f"segments: frames {s.get('start_frame')!r}, {s.get('end_frame')!r} converted to "
+                           f"integers ({start}, {end})")
+        cs, ce = max(0, min(start, last)), max(0, min(end, last))
+        if (cs, ce) != (start, end):
+            repairs.append(f"segments: frames ({start}, {end}) clamped to ({cs}, {ce})")
+        start, end = cs, ce
         if end < start:
             start, end = end, start
             repairs.append(f"segments: start and end swapped ({end}, {start})")
-        pc = str(s.get("phase_class") or "other")
+        pc = s.get("phase_class")
         if pc not in PHASE_CLASSES:
+            repairs.append(f"segments: phase_class {pc!r} at frame {start} is not a phase class, set to other")
             pc = "other"
-        outcome = s.get("outcome") if s.get("outcome") in OUTCOMES else "success"
-        ev = [e for e in (s.get("evidence") or []) if isinstance(e, dict)]
+        outcome = s.get("outcome")
+        if outcome not in OUTCOMES:
+            repairs.append(f"segments: outcome {outcome!r} at frame {start} is not an outcome, set to success")
+            outcome = "success"
+        text = str(s.get("phase_text") or pc)
+        if not s.get("phase_text"):
+            repairs.append(f"segments: empty phase_text at frame {start}, set to {pc}")
+        elif len(text) > 120:
+            repairs.append(f"segments: phase_text at frame {start} cut to 120 characters")
+        raw_idx = s.get("attempt_idx")
+        try:  # an integer or a string of digits; anything else (a float, "2nd", "--5") is attempt 1
+            digits = type(raw_idx) is int or (isinstance(raw_idx, str) and raw_idx.lstrip("-").isdecimal())
+            idx = max(1, int(raw_idx)) if digits else 1
+        except ValueError:
+            idx = 1
+        if str(idx) != str(raw_idx):
+            repairs.append(f"segments: attempt_idx {raw_idx!r} at frame {start} set to {idx}")
+        src = s.get("boundary_source")
+        if src not in ("signal", "vlm"):
+            repairs.append(f"segments: boundary_source {src!r} at frame {start} set to vlm")
+            src = "vlm"
+        cid = str(s.get("candidate_id") or "none")
+        if cid != "none" and cid not in cands:
+            repairs.append(f"segments: unknown candidate {cid} dropped")
+            cid = "none"
+        all_ev = s.get("evidence") or []
+        ev = [e for e in all_ev if isinstance(e, dict)] if isinstance(all_ev, list) else []
+        if not isinstance(all_ev, list) or len(ev) < len(all_ev):
+            repairs.append(f"segments: evidence that is not a list of objects dropped at frame {start}")
         if len(ev) > 3:
             repairs.append("segments: evidence cut to 3 items")
+        if any(len(str(e.get("statement", ""))) > 200 for e in ev[:3]):
+            repairs.append(f"segments: evidence statement at frame {start} cut to 200 characters")
         segs.append({"start_frame": start, "end_frame": end, "phase_class": pc,
-                     "phase_text": str(s.get("phase_text") or pc)[:120],
+                     "phase_text": text[:120],
                      "target": _ref(s.get("target"), objects, repairs, "target"),
                      "destination": _ref(s.get("destination"), objects, repairs, "destination"),
-                     "attempt_idx": max(1, int(s.get("attempt_idx") or 1)) if str(s.get("attempt_idx", "")).lstrip(
-                         "-").isdigit() else 1,
+                     "attempt_idx": idx,
                      "outcome": outcome, "failure_type": str(s.get("failure_type") or "none"),
-                     "boundary_source": s.get("boundary_source") if s.get("boundary_source") in ("signal", "vlm")
-                     else "vlm",
-                     "candidate_id": str(s.get("candidate_id") or "none"),
+                     "boundary_source": src, "candidate_id": cid,
                      "evidence": [{"frame": e.get("frame"), "camera": e.get("camera"),
                                    "statement": str(e.get("statement", ""))[:200]} for e in ev[:3]]})
     if not segs:
         repairs.append("segments: no usable segment, used the missing-output segment")
         return missing_output_segments(num_frames), verdicts
     segs.sort(key=lambda s: (s["start_frame"], s["end_frame"]))
-    # snap confirmed candidates first (the signal is the timing authority), then make contiguous
-    for s in segs:
-        cid = s["candidate_id"]
-        if cid in confirmed and cid in cands:
-            f = int(cands[cid]["frame"])
-            if f != s["end_frame"] and s["start_frame"] <= f < last:
-                repairs.append(f"segments: end {s['end_frame']} snapped to confirmed {cid} at {f}")
-                s["end_frame"] = f
-            s["boundary_source"] = "signal"
-        elif cid != "none" and s["boundary_source"] == "signal" and cid not in cands:
-            s["candidate_id"] = "none"
-            s["boundary_source"] = "vlm"
-            repairs.append(f"segments: unknown candidate {cid} dropped")
     out: list[dict[str, Any]] = []
     for s in segs:
         if out and s["start_frame"] <= out[-1]["start_frame"]:
@@ -149,9 +171,30 @@ def postprocess_segments(data: Any, num_frames: int, l1: dict[str, Any], objects
     if out[-1]["end_frame"] != last:
         repairs.append(f"segments: last segment extended to frame {last}")
         out[-1]["end_frame"] = last
+    # then snap to confirmed candidates (the signal is the timing authority): the boundary moves to the
+    # candidate frame when that frame lies inside this segment or the next one, else it stays as it is
+    for i, s in enumerate(out):
+        cid = s["candidate_id"]
+        f = int(cands[cid]["frame"]) if cid in confirmed else None
+        if f is not None and f != s["end_frame"]:
+            nxt = out[i + 1] if i + 1 < len(out) else None
+            if nxt is not None and s["start_frame"] <= f < nxt["end_frame"]:
+                repairs.append(f"segments: end {s['end_frame']} snapped to confirmed {cid} at {f}")
+                s["end_frame"] = f
+                nxt["start_frame"] = f + 1
+            else:
+                repairs.append(f"segments: confirmed {cid} at {f} cannot end the segment "
+                               f"{s['start_frame']}-{s['end_frame']}, boundary kept")
+        # signal only when the final end is the confirmed candidate's frame
+        src = "signal" if f is not None and s["end_frame"] == f else "vlm"
+        if src != s["boundary_source"]:
+            repairs.append(f"segments: boundary_source of the segment ending at {s['end_frame']} set to {src}")
+            s["boundary_source"] = src
     for s in out:
         s["mistake"] = s["outcome"] == "failed"
-        if s["outcome"] == "success":
+        if s["outcome"] == "success" and s["failure_type"] != "none":
+            repairs.append(f"segments: failure_type {s['failure_type']!r} of a successful segment at "
+                           f"{s['start_frame']} set to none")
             s["failure_type"] = "none"
     return out, verdicts
 

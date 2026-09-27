@@ -9,25 +9,33 @@ Credential: ``OPENROUTER_API_KEY``. Two entry points:
   with the schema in the prompt, then plain text with the schema in the prompt; the mode is recorded.
 
 Every HTTP attempt goes through an optional :class:`~robolabel.spend_guard.SpendGuard` (reserve the
-worst case first; reconcile with ``usage.cost``; a lost response stays reserved as spent). Responses
-are cached by the MEASUREMENT_SPEC 9.2 key in one JSONL file, so a rerun costs nothing, and every call
-appends one receipt line (spec 9.1) to a JSONL file. Receipts, logs and exceptions never contain the
-key, request headers or image bytes.
+worst case first; reconcile with ``usage.cost``; a lost response stays reserved as spent). An attempt
+whose cost is unknown is recorded with ``usd`` null and ``unreconciled_reserved_usd`` (the reservation
+the ledger keeps), and the call's result and receipt carry ``unreconciled``; ``settle_lost`` reconciles
+such attempts later from GET /generation. Responses are cached by the MEASUREMENT_SPEC 9.2 key in one
+JSONL file, so a rerun costs nothing, and every call appends one receipt line (spec 9.1) to a JSONL
+file. Receipts, logs and exceptions never contain the key, request headers or image bytes: error text
+is stripped of data URLs, base64 runs and credentials before it is stored.
 
-Error handling follows MODEL_SWEEP section 3: a 400 naming the schema or ``response_format`` and a
-404/503 "no endpoints" move to the next structured-output mode; a 400 about images is a model limit;
-402 is handled by ``limit_source``; 429 and 5xx retry up to 3 times (1.5 s doubling, at most 20 s);
-a timeout retries once; a 200 with an error, empty content or ``finish_reason`` "error" retries once;
-``finish_reason`` "length" retries once with ``max_tokens`` doubled (at most 16,000); invalid JSON
-gets one repair retry that sends the validation error back.
+Error handling follows MODEL_SWEEP section 3, in ``call`` and in the legacy ``ask`` alike: a 400
+naming the schema or ``response_format`` and a 404/503 "no endpoints" move to the next
+structured-output mode; a 400 about images is a model limit; 402 is handled by ``limit_source``
+(in-flight budget: wait for Retry-After, at most 5 times; credits: skip; otherwise stop paid calls);
+429 and 5xx retry up to 3 times (1.5 s doubling, at most 20 s); a timeout retries once; a 200 with an
+error, empty content or ``finish_reason`` "error" retries once; ``finish_reason`` "length" retries
+once with ``max_tokens`` doubled (at most 16,000); invalid JSON gets one repair retry that sends the
+validation error back.
 """
 
 from __future__ import annotations
 
 import base64
 import datetime as dt
+import email.utils
 import json
+import math
 import os
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -36,6 +44,7 @@ from typing import Any
 
 import numpy as np
 
+from ..eval.receipts import FORBIDDEN_KEYS
 from .base import (
     CallRequest,
     CallResult,
@@ -55,6 +64,21 @@ API_BASE = "https://openrouter.ai/api/v1"
 MODES = ("json_schema_strict", "json_object_with_schema_in_prompt", "plain_with_schema_in_prompt")
 RETRY_STATUSES = {429, 500, 502, 504, 520, 522, 524}
 MAX_TOKENS_CAP = 16000
+IN_FLIGHT_WAITS = 5  # HTTP 402 openrouter_in_flight_budget: waits per call before it is skipped
+IN_FLIGHT_DEFAULT_WAIT_S = 10.0
+# Status codes OpenRouter returns before any provider generated (SPEC_QUESTIONS Q13: recorded as 0).
+REJECTED_BEFORE_GENERATION = (400, 401, 402, 403, 404, 429)
+
+# Error text is stored in receipts, so inline media and credentials are cut out of it first. An upstream
+# error can echo the request body escaped (a JSON backslash or unicode escape, a URL percent escape), so a
+# base64 character may also be an escaped "/" or "+", and a padding "=" an escaped one.
+_B64_CHAR = r"(?:[A-Za-z0-9+/_-]|\\/|\\u002[bf]|%2[bf])"
+_B64_PAD = r"(?:=|\\u003d|%3d)"
+_DATA_URL_RE = re.compile(r"data(?::|%3a)[\w.+-]+(?:/|\\/|\\u002f|%2f)[\w.+-]+(?:;[\w.+=-]+)*(?:;|%3b)base64(?:,|%2c)"
+                          + _B64_CHAR + "*" + _B64_PAD + "*", re.IGNORECASE)
+_MEDIA_MARKER_RE = re.compile(r"data:image[^\s\"',;]*|base64,", re.IGNORECASE)
+_BASE64_RUN_RE = re.compile(_B64_CHAR + "{64,}" + _B64_PAD + "{0,2}", re.IGNORECASE)
+_SECRET_RES = (re.compile(r"sk-or-[A-Za-z0-9-]{8,}"), re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{8,}"))
 
 
 class _Unavailable(Exception):
@@ -73,6 +97,53 @@ def _sha(data: bytes) -> str:
     import hashlib
 
     return hashlib.sha256(data).hexdigest()
+
+
+def _redact(text: str, secret: str | None = None, *, media: bool = True) -> str:
+    """``text`` without credentials and (with ``media``) without data URLs or long base64 runs."""
+    if secret and len(secret) >= 8:
+        text = text.replace(secret, "[redacted]")
+    for pattern in _SECRET_RES:
+        text = pattern.sub("[redacted]", text)
+    if media:
+        text = _DATA_URL_RE.sub("[data URL removed]", text)
+        text = _BASE64_RUN_RE.sub("[base64 removed]", text)
+        text = _MEDIA_MARKER_RE.sub("[media removed]", text)
+    return text
+
+
+def _scrub(obj: Any, secret: str | None = None, key: str = "") -> Any:
+    """A copy of a receipt without header or credential keys; credentials are cut from every string and
+    media from every ``error`` string (the response text is kept as the model wrote it)."""
+    if isinstance(obj, dict):
+        return {k: _scrub(v, secret, str(k)) for k, v in obj.items()
+                if str(k).lower().replace("_", "-") not in FORBIDDEN_KEYS}
+    if isinstance(obj, (list, tuple)):
+        return [_scrub(v, secret, key) for v in obj]
+    if isinstance(obj, str):
+        return _redact(obj, secret, media=key == "error")
+    return obj
+
+
+def _retry_after_s(value: Any, default: float = IN_FLIGHT_DEFAULT_WAIT_S) -> float:
+    """Seconds to wait from a Retry-After header (seconds or an HTTP date), clamped to 1..120 s."""
+    wait = default
+    if value is not None:
+        text = str(value).strip()
+        try:
+            wait = float(text)
+        except ValueError:
+            try:
+                when = email.utils.parsedate_to_datetime(text)
+            except (TypeError, ValueError, IndexError):
+                when = None
+            if when is not None:
+                if when.tzinfo is None:
+                    when = when.replace(tzinfo=dt.timezone.utc)
+                wait = (when - dt.datetime.now(dt.timezone.utc)).total_seconds()
+        if not math.isfinite(wait):
+            wait = default
+    return min(max(wait, 1.0), 120.0)
 
 
 class _RequestsTransport:
@@ -133,14 +204,15 @@ def _parse(r) -> tuple[int, Any, str, dict[str, str]]:
 
 
 def _error_message(data: Any, text: str) -> str:
+    """The error text, redacted before it is cut (a cut could split a data URL past recognition)."""
     if isinstance(data, dict) and isinstance(data.get("error"), dict):
         err = data["error"]
         meta = err.get("metadata")
         raw = ""
         if isinstance(meta, dict) and meta.get("raw"):
-            raw = f" | {str(meta.get('raw'))[:300]}"
-        return f"{err.get('message', '')}{raw}"[:600]
-    return (text or "")[:400]
+            raw = f" | {_redact(str(meta.get('raw')))[:300]}"
+        return f"{_redact(str(err.get('message', '')))}{raw}"[:600]
+    return _redact(text or "")[:400]
 
 
 def _limit_source(data: Any) -> str | None:
@@ -175,7 +247,10 @@ class OpenRouterProvider(VLMProvider):
         self.legacy_max_tokens = legacy_max_tokens
         self.legacy_reasoning = legacy_reasoning if legacy_reasoning is not None else {"effort": "low",
                                                                                         "exclude": True}
-        self.in_flight_backoff = threading.Event()  # set when OpenRouter's in-flight budget is full
+        # Set when OpenRouter's in-flight budget is full (HTTP 402). The guard's event when there is a guard,
+        # so every provider on one ledger shares it and the scheduler can drop to one concurrent job.
+        backoff = getattr(guard, "in_flight_backoff", None)
+        self.in_flight_backoff = backoff if isinstance(backoff, threading.Event) else threading.Event()
 
     # ------------------------------------------------------------------ helpers
     def _headers(self) -> dict[str, str]:
@@ -238,59 +313,112 @@ class OpenRouterProvider(VLMProvider):
     # ------------------------------------------------------------------ one HTTP attempt
     def _attempt(self, body: dict[str, Any], req: CallRequest, n_images: int, text_chars: int,
                  label: str) -> dict[str, Any]:
-        """Reserve, send, reconcile. Returns an attempt record; raises SpendRefused / PaidCallsStopped."""
+        """Reserve, send, reconcile. Returns an attempt record; raises SpendRefused / PaidCallsStopped.
+
+        ``usd`` is the attempt's cost: ``usage.cost``; 0 for a request OpenRouter rejected before any
+        generation (SPEC_QUESTIONS Q13); None when the cost is unknown (a timeout, a dropped connection,
+        a 5xx, a 200 without ``usage.cost``), and then ``unreconciled_reserved_usd`` is the reservation the
+        ledger keeps as spent. ``guard_wait_s`` is the time spent in the guard (a drift pause included).
+        """
         ctx = req.context
         rid = None
+        worst = 0.0
+        guard_s = 0.0
         if self.guard is not None:
             worst = self.worst_case(text_chars, n_images, req.image_tokens_per_image, body["max_tokens"])
+            g0 = time.perf_counter()
             rid = self.guard.reserve(worst, bucket=ctx.get("bucket", "sweep"), model=ctx.get("model_key"),
                                      label=label)
+            guard_s += time.perf_counter() - g0
+        backing_off = self.in_flight_backoff.is_set()
         t0 = time.perf_counter()
         rec: dict[str, Any] = {"started_utc": _utc(), "max_tokens": body["max_tokens"]}
+        cost = None
+        gen_id = None
         try:
             status, data, text, headers = self.transport.post(API_BASE + "/chat/completions", body,
                                                               self._headers(), self.timeout_seconds)
         except TimeoutError:
-            rec.update(kind="timeout", status=None, wall_s=round(time.perf_counter() - t0, 3))
-            if rid is not None:
-                self.guard.lost(rid, reason="timeout")
-            return rec
+            rec.update(kind="timeout", status=None)
         except ConnectionError as exc:
-            rec.update(kind="connection", status=None, error=str(exc), wall_s=round(time.perf_counter() - t0, 3))
-            if rid is not None:
-                self.guard.lost(rid, reason=f"connection error {exc}")
-            return rec
-        rec["wall_s"] = round(time.perf_counter() - t0, 3)
-        rec["status"] = status
-        gen_id = data.get("id") if isinstance(data, dict) else None
-        usage = data.get("usage") if isinstance(data, dict) and isinstance(data.get("usage"), dict) else {}
-        cost = usage.get("cost") if isinstance(usage, dict) else None
-        rec["generation_id"] = gen_id
-        if status == 200 and isinstance(data, dict) and not data.get("error"):
-            choice = (data.get("choices") or [{}])[0]
-            msg = choice.get("message") or {}
-            content = msg.get("content")
-            if isinstance(content, list):  # some providers return parts
-                content = "".join(str(c.get("text", "")) for c in content if isinstance(c, dict))
-            rec.update(kind="ok", content=content or "", finish_reason=choice.get("finish_reason"),
-                       native_finish_reason=choice.get("native_finish_reason"), usage=usage,
-                       model_version=data.get("model"), provider_name=data.get("provider"))
-            if not (content or "").strip() or choice.get("finish_reason") == "error":
-                rec["kind"] = "empty"
+            rec.update(kind="connection", status=None, error=_redact(str(exc), self.api_key))
         else:
-            rec.update(kind="http_error", error=_error_message(data, text), usage=usage,
-                       limit_source=_limit_source(data), retry_after=headers.get("retry-after"))
+            rec["status"] = status
+            gen_id = data.get("id") if isinstance(data, dict) else None
+            usage = data.get("usage") if isinstance(data, dict) and isinstance(data.get("usage"), dict) else {}
+            raw_cost = usage.get("cost")
+            if isinstance(raw_cost, (int, float)) and not isinstance(raw_cost, bool):
+                cost = float(raw_cost)
+            rec["generation_id"] = gen_id
+            if status == 200 and isinstance(data, dict) and not data.get("error"):
+                choice = (data.get("choices") or [{}])[0]
+                msg = choice.get("message") or {}
+                content = msg.get("content")
+                if isinstance(content, list):  # some providers return parts
+                    content = "".join(str(c.get("text", "")) for c in content if isinstance(c, dict))
+                rec.update(kind="ok", content=content or "", finish_reason=choice.get("finish_reason"),
+                           native_finish_reason=choice.get("native_finish_reason"), usage=usage,
+                           model_version=data.get("model"), provider_name=data.get("provider"))
+                if not (content or "").strip() or choice.get("finish_reason") == "error":
+                    rec["kind"] = "empty"
+            elif status == 200:
+                # An error object in a 200 (an upstream failure after the headers went out on a long call)
+                # or a body that is not JSON: a failed attempt, retried once (MODEL_SWEEP section 3).
+                rec.update(kind="error_200", error=_redact(_error_message(data, text), self.api_key), usage=usage)
+            else:
+                rec.update(kind="http_error", error=_redact(_error_message(data, text), self.api_key), usage=usage,
+                           limit_source=_limit_source(data), retry_after=(headers or {}).get("retry-after"))
+        rec["wall_s"] = round(time.perf_counter() - t0, 3)
+        rejected = rec["kind"] == "http_error" and rec["status"] in REJECTED_BEFORE_GENERATION and not gen_id
+        rec["usd"] = cost if cost is not None else (0.0 if rejected else None)
         if rid is not None:
+            g0 = time.perf_counter()
             if cost is not None:
-                self.guard.reconcile(rid, float(cost))
-            elif rec["kind"] == "http_error" and status in (400, 401, 402, 403, 404, 429) and not gen_id:
+                self.guard.reconcile(rid, cost)
+            elif rejected:
                 # Rejected by OpenRouter before any provider generated (validation, routing, credits, rate
                 # limit): recorded as 0. The drift check against the key's usage catches it if that is wrong.
-                self.guard.reconcile(rid, 0.0, note=f"HTTP {status} before generation, no usage; recorded as 0")
+                self.guard.reconcile(rid, 0.0, note=f"HTTP {rec['status']} before generation, no usage; "
+                                                    "recorded as 0")
             else:
-                self.guard.lost(rid, reason=f"no usage.cost ({rec['kind']}, HTTP {status})", generation_id=gen_id)
-        rec["usd"] = float(cost) if cost is not None else None
+                if rec["kind"] == "timeout":
+                    reason = "timeout"
+                elif rec["kind"] == "connection":
+                    reason = f"connection error {rec.get('error')}"
+                else:
+                    reason = f"no usage.cost ({rec['kind']}, HTTP {rec['status']})"
+                self.guard.lost(rid, reason=reason, generation_id=gen_id)
+                rec["unreconciled_reserved_usd"] = round(worst, 8)
+            guard_s += time.perf_counter() - g0
+        if rec["kind"] == "ok" and backing_off:
+            self.in_flight_backoff.clear()  # a request sent while the in-flight budget was full went through
+        rec["guard_wait_s"] = round(guard_s, 3)
         return rec
+
+    def _on_402(self, rec: dict[str, Any], waits: int) -> int:
+        """budget.yaml http_402 for one HTTP 402 attempt (``call`` and the legacy path alike).
+
+        In-flight budget full: set ``in_flight_backoff``, wait for Retry-After (seconds or an HTTP date;
+        10 s without one) and return the new wait count, and the caller retries. After IN_FLIGHT_WAITS
+        waits the call is skipped with SpendRefused (not a failure; a rerun tries it again). Credits (this
+        request alone exceeds the in-flight budget): SpendRefused. Anything else: stop paid calls for the
+        night (PaidCallsStopped).
+        """
+        from ..spend_guard import PaidCallsStopped, SpendRefused
+
+        src = rec.get("limit_source")
+        if src == "openrouter_in_flight_budget":
+            self.in_flight_backoff.set()
+            if waits >= IN_FLIGHT_WAITS:
+                raise SpendRefused(f"HTTP 402 openrouter_in_flight_budget: still full after {waits} waits; "
+                                   "call skipped")
+            self._sleep(_retry_after_s(rec.get("retry_after")))
+            return waits + 1
+        if src == "openrouter_credits":
+            raise SpendRefused("HTTP 402 openrouter_credits: this request's estimate exceeds the in-flight budget")
+        if self.guard is not None:
+            self.guard.stop(f"HTTP 402 ({src or 'insufficient credits or key limit'})")
+        raise PaidCallsStopped(f"HTTP 402: {rec.get('error')}")
 
     # ------------------------------------------------------------------ the structured call
     def call(self, req: CallRequest) -> CallResult:
@@ -341,12 +469,13 @@ class OpenRouterProvider(VLMProvider):
                   text_chars: int, attempts: list[dict[str, Any]]) -> CallResult | None:
         max_tokens = min(int(req.max_tokens), MAX_TOKENS_CAP)
         extra: list[dict[str, Any]] = []
+        extra_chars = 0  # the repair retry also sends the earlier answer and the validation message
         retried_length = retried_empty = repaired = timeouts = 0
-        retries_5xx = 0
+        retries_5xx = in_flight_waits = 0
         while True:
             body = self._payload(req, mode, max_tokens, extra)
             label = f"{req.context.get('arm', '')} {req.context.get('episode_key', '')} {req.step} {mode}"
-            rec = self._attempt(body, req, n_images, text_chars, label)
+            rec = self._attempt(body, req, n_images, text_chars + extra_chars, label)
             rec["mode"] = mode
             attempts.append(rec)
             kind = rec.get("kind")
@@ -359,22 +488,8 @@ class OpenRouterProvider(VLMProvider):
             if kind == "http_error":
                 msg = (rec.get("error") or "").lower()
                 if status == 402:
-                    src = rec.get("limit_source")
-                    if src == "openrouter_in_flight_budget":
-                        self.in_flight_backoff.set()
-                        wait = float(rec.get("retry_after") or 10.0)
-                        self._sleep(min(max(wait, 1.0), 120.0))
-                        continue
-                    if src == "openrouter_credits":
-                        from ..spend_guard import SpendRefused
-
-                        raise SpendRefused("HTTP 402 openrouter_credits: this request's estimate exceeds the "
-                                           "in-flight budget")
-                    if self.guard is not None:
-                        self.guard.stop(f"HTTP 402 ({src or 'insufficient credits or key limit'})")
-                    from ..spend_guard import PaidCallsStopped
-
-                    raise PaidCallsStopped(f"HTTP 402: {rec.get('error')}")
+                    in_flight_waits = self._on_402(rec, in_flight_waits)
+                    continue
                 if status == 400 and ("image" in msg and ("size" in msg or "many" in msg or "count" in msg
                                                           or "limit" in msg or "exceed" in msg)):
                     return CallResult(False, None, "", "failed", mode=mode, error=f"model image limit: {msg[:200]}")
@@ -392,16 +507,17 @@ class OpenRouterProvider(VLMProvider):
                         self._sleep(min(20.0, 1.5 * (2 ** (retries_5xx - 1))))
                         continue
                 return CallResult(False, None, "", "failed", mode=mode, error=f"HTTP {status}: {msg[:300]}")
-            if kind == "empty" and rec.get("finish_reason") == "length" and retried_length == 0                     and max_tokens < MAX_TOKENS_CAP:
+            if kind == "empty" and rec.get("finish_reason") == "length" and retried_length == 0 \
+                    and max_tokens < MAX_TOKENS_CAP:
                 # reasoning used the whole budget before any answer: the length rule, not the empty rule
                 retried_length = 1
                 max_tokens = min(max_tokens * 2, MAX_TOKENS_CAP)
                 continue
-            if kind == "empty":
+            if kind in ("empty", "error_200"):
                 retried_empty += 1
                 if retried_empty <= 1:
                     continue
-                return CallResult(False, None, "", "failed", mode=mode, error="empty content or finish_reason error")
+                return CallResult(False, None, "", "failed", mode=mode, error=self._failed_attempt_error(rec))
             # kind ok
             if rec.get("finish_reason") == "length" and retried_length == 0 and max_tokens < MAX_TOKENS_CAP:
                 retried_length = 1
@@ -417,9 +533,16 @@ class OpenRouterProvider(VLMProvider):
                 extra = [{"role": "assistant", "content": text[:20000]},
                          {"role": "user", "content": "That answer did not validate: " + "; ".join(errors)[:1500]
                           + ". Return the corrected JSON only, matching the schema exactly."}]
+                extra_chars = sum(len(m["content"]) for m in extra)
                 continue
             return CallResult(False, data, text, "invalid", mode=mode, finish_reason=rec.get("finish_reason"),
                               repaired=True, error="; ".join(errors)[:600])
+
+    @staticmethod
+    def _failed_attempt_error(rec: dict[str, Any]) -> str:
+        if rec.get("kind") == "error_200":
+            return f"HTTP 200 with an error, twice: {(rec.get('error') or '')[:300]}"
+        return "empty content or finish_reason error"
 
     @staticmethod
     def _parse_and_validate(text: str, req: CallRequest) -> tuple[Any, list[str]]:
@@ -451,6 +574,9 @@ class OpenRouterProvider(VLMProvider):
         usage_tot: dict[str, float] = {}
         usd = 0.0
         lat = 0.0
+        guard_s = 0.0
+        unreconciled = False
+        unrec_reserved = 0.0
         gen_ids = []
         for a in attempts:
             u = a.get("usage") or {}
@@ -465,16 +591,26 @@ class OpenRouterProvider(VLMProvider):
                 usage_tot["cached_tokens"] = usage_tot.get("cached_tokens", 0) + pdet["cached_tokens"]
             if a.get("usd") is not None:
                 usd += float(a["usd"])
+            else:  # cost unknown: not summed as 0; the ledger keeps its reservation as spent
+                unreconciled = True
+                unrec_reserved += float(a.get("unreconciled_reserved_usd") or 0.0)
             lat += float(a.get("wall_s") or 0.0)
+            guard_s += float(a.get("guard_wait_s") or 0.0)
             if a.get("generation_id"):
                 gen_ids.append(a["generation_id"])
         result.usage = usage_tot
-        result.usd = round(usd, 8)
+        result.usd = round(usd, 8)  # the known costs; see unreconciled
         result.latency_s = round(lat, 3)
-        result.wall_s = round(time.perf_counter() - t_start, 3)
+        # the client's time for this call, without time spent waiting in the guard (a drift pause)
+        result.wall_s = round(max(0.0, time.perf_counter() - t_start - guard_s), 3)
         result.attempts = len(attempts)
         result.retries = max(0, len(attempts) - 1)
         result.generation_ids = gen_ids
+        if result.error:
+            result.error = _redact(result.error, self.api_key)
+        # CallResult (providers/base.py) has no fields for these; read them with getattr(result, name, default)
+        result.unreconciled = unreconciled
+        result.unreconciled_reserved_usd = round(unrec_reserved, 8)
         last_ok = next((a for a in reversed(attempts) if a.get("kind") == "ok"), {})
         ctx = req.context
         receipt = {
@@ -490,8 +626,10 @@ class OpenRouterProvider(VLMProvider):
                       "input_audio_tokens": 0, "input_tokens": usage_tot.get("input_tokens"),
                       "cached_tokens": usage_tot.get("cached_tokens"), "output_tokens": usage_tot.get("output_tokens"),
                       "reasoning_tokens": usage_tot.get("reasoning_tokens")},
-            "latency_s": result.latency_s, "wall_s": result.wall_s, "retries": result.retries,
-            "batch_job_id": None, "price_table_version": self.price_table_version, "usd": result.usd,
+            "latency_s": result.latency_s, "wall_s": result.wall_s, "guard_wait_s": round(guard_s, 3),
+            "retries": result.retries, "batch_job_id": None, "price_table_version": self.price_table_version,
+            "usd": result.usd, "unreconciled": unreconciled,
+            "unreconciled_reserved_usd": result.unreconciled_reserved_usd,
             "cache_hit": False, "status": result.status, "structured_mode": result.mode,
             "finish_reason": result.finish_reason, "provider_name": last_ok.get("provider_name"),
             "repaired": result.repaired, "truncated_retry": result.truncated_retry, "error": result.error,
@@ -500,12 +638,15 @@ class OpenRouterProvider(VLMProvider):
             "generation_ids": gen_ids, "n_images": len(media),
             "response_text": result.text[:60000] if result.text else None,
         }
+        receipt = _scrub(receipt, self.api_key)
         result.receipt = receipt
         if self.receipts is not None:
             self.receipts.write(receipt)
         if self.cache is not None and key is not None and result.status == "ok":
             self.cache.put(key, {"text": result.text, "mode": result.mode, "finish_reason": result.finish_reason,
-                                 "usage": usage_tot, "usd": result.usd, "latency_s": result.latency_s,
+                                 "usage": usage_tot, "usd": result.usd, "unreconciled": unreconciled,
+                                 "unreconciled_reserved_usd": result.unreconciled_reserved_usd,
+                                 "latency_s": result.latency_s,
                                  "wall_s": result.wall_s, "attempts": result.attempts, "repaired": result.repaired,
                                  "truncated_retry": result.truncated_retry, "generation_ids": gen_ids,
                                  "model": self.model, "provider_name": receipt["provider_name"],
@@ -522,6 +663,9 @@ class OpenRouterProvider(VLMProvider):
                             truncated_retry=bool(hit.get("truncated_retry")), cache_hit=True,
                             generation_ids=list(hit.get("generation_ids") or []),
                             error="; ".join(errors) if errors else None)
+        # the original call's cost, as recorded when it ran (see _finish)
+        result.unreconciled = bool(hit.get("unreconciled"))
+        result.unreconciled_reserved_usd = float(hit.get("unreconciled_reserved_usd") or 0.0)
         ctx = req.context
         receipt = {"provider": self.name, "model": self.model, "model_version": hit.get("model_version"),
                    "request_id": (result.generation_ids or [None])[-1], "utc_time": _utc(), "cache_key": key,
@@ -533,12 +677,15 @@ class OpenRouterProvider(VLMProvider):
                                          "mode": result.mode, "response_schema_sha256": schema_sha256(req.schema)},
                    "usage": result.usage, "latency_s": result.latency_s, "wall_s": result.wall_s,
                    "retries": max(0, result.attempts - 1), "batch_job_id": None,
-                   "price_table_version": self.price_table_version, "usd": result.usd, "cache_hit": True,
+                   "price_table_version": self.price_table_version, "usd": result.usd,
+                   "unreconciled": result.unreconciled,
+                   "unreconciled_reserved_usd": result.unreconciled_reserved_usd, "cache_hit": True,
                    "status": result.status, "structured_mode": result.mode, "finish_reason": result.finish_reason,
                    "provider_name": hit.get("provider_name"), "step": req.step, "arm": ctx.get("arm"),
                    "bucket": ctx.get("bucket"), "model_key": ctx.get("model_key"),
                    "generation_ids": result.generation_ids, "original_utc": hit.get("utc_time"),
                    "response_text": result.text[:60000]}
+        receipt = _scrub(receipt, self.api_key)
         result.receipt = receipt
         if self.receipts is not None:
             self.receipts.write(receipt)
@@ -557,6 +704,21 @@ class OpenRouterProvider(VLMProvider):
             if i < tries - 1:
                 self._sleep(wait_s)
         return None
+
+    def settle_lost(self, guard: Any = None, *, tries: int = 5, wait_s: float = 2.0) -> dict[int, float]:
+        """Reconcile the guard's lost attempts that have a generation id from GET /generation total_cost
+        (free; budget.yaml lost_responses). Returns rid -> recorded USD for the ones settled; the others
+        stay reserved as spent (no stats yet, or no total_cost)."""
+        guard = guard if guard is not None else self.guard
+        if guard is None:
+            return {}
+        settled: dict[int, float] = {}
+        for rid, gen_id in sorted(guard.lost_with_generation().items()):
+            stats = self.generation_stats(gen_id, tries=tries, wait_s=wait_s)
+            cost = stats.get("total_cost") if isinstance(stats, dict) else None
+            if isinstance(cost, (int, float)) and not isinstance(cost, bool) and guard.reconcile_lost(rid, cost):
+                settled[rid] = float(cost)
+        return settled
 
     def key_usage(self) -> float | None:
         """This key's lifetime usage from GET /key (works with a normal key)."""
@@ -599,9 +761,11 @@ class OpenRouterProvider(VLMProvider):
         result = self._legacy_call(req)
         raw = {"provider": self.name, "model": self.model, "question": question, "frame_labels": list(frame_labels),
                "request_image_note": "image bytes omitted", "status": result.status, "usd": result.usd,
+               "unreconciled": getattr(result, "unreconciled", False),
+               "unreconciled_reserved_usd": getattr(result, "unreconciled_reserved_usd", 0.0),
                "usage": result.usage, "cache_hit": result.cache_hit, "structured_mode": result.mode,
                "error": result.error, "response_text": result.text, "temperature_ignored": temperature}
-        write_receipt(receipt_path, raw)
+        write_receipt(receipt_path, _scrub(raw, self.api_key))
         if result.status not in ("ok", "invalid"):
             raise RuntimeError(f"OpenRouter call {result.status}: {result.error}")
         return ProviderResponse(result.text, raw, self.name, self.model, result.wall_s, result.usd)
@@ -633,41 +797,62 @@ class OpenRouterProvider(VLMProvider):
         return self._finish(req, result, key, prompt, media, attempts, t0)
 
     def _run_legacy(self, req: CallRequest, attempts: list[dict[str, Any]]) -> CallResult:
-        max_tokens = req.max_tokens
+        """The MODEL_SWEEP section 3 rules of ``_run_mode`` for the one plain-text mode (no schema, no repair)."""
+        max_tokens = min(int(req.max_tokens), MAX_TOKENS_CAP)
         body_req = CallRequest(req.step, req.system, req.parts, {"type": "object"}, "legacy", max_tokens,
                                req.reasoning, req.context)
-        tries = 0
+        label = f"{req.context.get('arm', '')} {req.context.get('episode_key', '')} {req.step} legacy"
+        retried_length = retried_empty = timeouts = retries_5xx = in_flight_waits = 0
         while True:
             body = self._payload(body_req, "legacy_plain", max_tokens)
             body["messages"][-1]["content"] = [c for c in body["messages"][-1]["content"]
                                               if not (c.get("type") == "text"
                                                       and c.get("text", "").startswith("Return only JSON that"))]
-            rec = self._attempt(body, body_req, 1, len(req.parts[0].text), f"{req.context.get('arm', '')} "
-                                f"{req.context.get('episode_key', '')} {req.step} legacy")
+            rec = self._attempt(body, body_req, 1, len(req.parts[0].text), label)
             rec["mode"] = "legacy_plain"
             attempts.append(rec)
-            tries += 1
-            if rec.get("kind") == "ok":
-                if rec.get("finish_reason") == "length" and max_tokens < MAX_TOKENS_CAP and tries <= 2:
-                    max_tokens = min(max_tokens * 2, MAX_TOKENS_CAP)
-                    continue
-                return CallResult(True, None, rec.get("content") or "", "ok", mode="legacy_plain",
-                                  finish_reason=rec.get("finish_reason"))
+            kind = rec.get("kind")
             status = rec.get("status")
-            if status == 402:
-                if self.guard is not None:
-                    self.guard.stop(f"HTTP 402 ({rec.get('limit_source') or 'credits or key limit'})")
-                from ..spend_guard import PaidCallsStopped
-
-                raise PaidCallsStopped("HTTP 402")
-            if tries <= 3 and (rec.get("kind") in ("timeout", "connection", "empty")
-                               or (status is not None and (status in RETRY_STATUSES or 500 <= status < 600))):
-                if rec.get("kind") == "timeout" and tries > 1:
-                    return CallResult(False, None, "", "failed", mode="legacy_plain", error="timeout twice")
-                self._sleep(min(20.0, 1.5 * (2 ** (tries - 1))))
+            if kind == "timeout" or kind == "connection":
+                timeouts += 1
+                if timeouts <= 1:
+                    continue
+                return CallResult(False, None, "", "failed", mode="legacy_plain", error=f"{kind} twice")
+            if kind == "http_error":
+                msg = (rec.get("error") or "").lower()
+                if status == 402:
+                    in_flight_waits = self._on_402(rec, in_flight_waits)
+                    continue
+                if status in (404, 503) and ("no endpoints" in msg or "routing requirements" in msg
+                                             or "no available" in msg):
+                    return CallResult(False, None, "", "unavailable", mode="legacy_plain",
+                                      error=f"HTTP {status}: {msg[:200]}")
+                if status in RETRY_STATUSES or (status is not None and 500 <= status < 600):
+                    retries_5xx += 1
+                    if retries_5xx <= 3:
+                        self._sleep(min(20.0, 1.5 * (2 ** (retries_5xx - 1))))
+                        continue
+                return CallResult(False, None, "", "failed", mode="legacy_plain",
+                                  error=f"{kind} HTTP {status}: {str(rec.get('error'))[:300]}")
+            if kind == "empty" and rec.get("finish_reason") == "length" and retried_length == 0 \
+                    and max_tokens < MAX_TOKENS_CAP:
+                # reasoning used the whole budget before any answer: one retry with max_tokens doubled
+                retried_length = 1
+                max_tokens = min(max_tokens * 2, MAX_TOKENS_CAP)
                 continue
-            return CallResult(False, None, "", "failed", mode="legacy_plain",
-                              error=f"{rec.get('kind')} HTTP {status}: {str(rec.get('error'))[:300]}")
+            if kind in ("empty", "error_200"):
+                retried_empty += 1
+                if retried_empty <= 1:
+                    continue
+                return CallResult(False, None, "", "failed", mode="legacy_plain",
+                                  error=self._failed_attempt_error(rec))
+            # kind ok
+            if rec.get("finish_reason") == "length" and retried_length == 0 and max_tokens < MAX_TOKENS_CAP:
+                retried_length = 1
+                max_tokens = min(max_tokens * 2, MAX_TOKENS_CAP)
+                continue
+            return CallResult(True, None, rec.get("content") or "", "ok", mode="legacy_plain",
+                              finish_reason=rec.get("finish_reason"), truncated_retry=retried_length > 0)
 
 
 register_provider("openrouter", OpenRouterProvider)

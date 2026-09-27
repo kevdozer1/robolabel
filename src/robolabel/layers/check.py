@@ -93,30 +93,46 @@ def run_checks(segments: list[dict[str, Any]], coarse: list[dict[str, Any]], goa
                and not (r["status"] == "unsure" and r.get("unsure_kind") == "perception")]
         rows.append(_row(5, "fail" if bad else "pass",
                          f"required items with no visible fact at frame {last_kf}: {bad}" if bad else "all supported"))
-    # 6: robot end-state items equal the L1 facts
+    # 6: robot end-state items equal the L1 facts. The model's claim about the last frame is the value when
+    # achieved is true and its negation when achieved is false; an item with achieved unknown claims nothing.
+    # L1 holding means holding any object, so a claim of not holding one named object is not compared.
     sig = {it["predicate"]: it for it in l1.get("end_state", [])}
     robot = [r for r in reqs if r["kind"] == "robot_end_state" and r.get("added_by") != "postprocess"]
     if not goal or not robot:
         rows.append(_row(6, "na", "no robot items from the model"))
     else:
-        bad = []
+        bad, compared = [], 0
         for r in robot:
-            p, v = r["predicate"], r["value"]
-            if p == "holding" and "holding" in sig and isinstance(v, bool):
-                if v != bool(sig["holding"]["value"]):
-                    bad.append(f"holding {v} vs signal {sig['holding']['value']}")
-            elif p in ("gripper_open", "gripper_closed") and isinstance(v, bool):
+            p, v, ach = r["predicate"], r["value"], r.get("achieved")
+            if not isinstance(v, bool) or not isinstance(ach, bool):
+                continue
+            claim = v if ach else not v
+            if p == "holding" and "holding" in sig:
+                if not claim and r.get("ref_object", "none") != "none":
+                    continue  # "not holding o3" leaves open holding something else; L1 cannot tell which object
+                compared += 1
+                if claim != bool(sig["holding"]["value"]):
+                    bad.append(f"holding claimed {claim} vs signal {sig['holding']['value']}")
+            elif p in ("gripper_open", "gripper_closed"):
                 sp = "gripper_open" if "gripper_open" in sig else "gripper_closed"
-                if sig.get(sp, {}).get("confidence") == "high" and (p == sp) != v:
-                    bad.append(f"{p} {v} vs signal {sp}")
-            elif p == "withdrawn" and "withdrawn" in sig and isinstance(v, bool):
-                if v != bool(sig["withdrawn"]["value"]):
-                    bad.append(f"withdrawn {v} vs signal {sig['withdrawn']['value']}")
-        rows.append(_row(6, "fail" if bad else "pass", "; ".join(bad) if bad else "robot items match the signal"))
-    # 7: a retract is claimed only if L1 says the arm moved away
-    retracts = [s for s in segments if s.get("phase_class") == "retract"]
-    if not retracts:
-        rows.append(_row(7, "na", "no retract claimed"))
+                if sig.get(sp, {}).get("confidence") == "high":
+                    compared += 1
+                    if (p == sp) != claim:
+                        bad.append(f"{p} claimed {claim} vs signal {sp}")
+            elif p == "withdrawn" and "withdrawn" in sig:
+                compared += 1
+                if claim != bool(sig["withdrawn"]["value"]):
+                    bad.append(f"withdrawn claimed {claim} vs signal {sig['withdrawn']['value']}")
+        rows.append(_row(6, "na" if not compared else ("fail" if bad else "pass"),
+                         "; ".join(bad) if bad else f"{compared} robot item(s) match the signal" if compared else
+                         "no robot claim the signal decides (achieved unknown, value unsure, low confidence, or "
+                         "not holding a named object)"))
+    # 7: a retract is claimed only if L1 says the arm moved away. L1's withdrawn flag is about the end of
+    # the episode, so only a retract that is the last segment is checked; a retract mid-episode is na.
+    if not segments or segments[-1].get("phase_class") != "retract":
+        mid = sum(1 for s in segments if s.get("phase_class") == "retract")
+        rows.append(_row(7, "na", f"no final retract ({mid} retract(s) mid-episode not checked)" if mid else
+                         "no retract claimed"))
     else:
         moved = bool(sig.get("withdrawn", {}).get("value"))
         rows.append(_row(7, "pass" if moved else "fail",
@@ -169,7 +185,8 @@ def run_checks(segments: list[dict[str, Any]], coarse: list[dict[str, Any]], goa
                        ", ".join(str(r["rule_id"]) for r in failed if r["rule_id"] in SIGNAL_RULES) + ")")
     held = _held_after_last_grasp(l1, facts)
     pt = (goal or {}).get("primary_target") if goal else None
-    if held and pt not in (None, "none", "unsure") and held != pt:
+    ids = {o["object_id"] for o in objects}
+    if held and pt in ids and held != pt:  # a primary target the inventory cannot resolve is not compared
         reasons.append(f"the held object {held} is not the primary target {pt}")
     return {"checks": rows, "risk": risk, "routed": bool(reasons), "route_reasons": reasons}
 

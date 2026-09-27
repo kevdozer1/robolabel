@@ -6,15 +6,21 @@ A call that is still invalid after its repair retry does not end the episode (V_
 an episode fails"): an invalid inventory leaves targets unsure; invalid facts leave the goal call without
 facts; invalid segments give the missing-output segment of spec 4.0 (the goal call still runs); an
 invalid goal leaves the episode without a goal record. Every such case is recorded in ``repairs``.
+
+The view record and the episode's ``episode_metadata`` row carry ``pipeline_code``, a hash of the code
+that wrote them (the layers, this module, the v7 schema and the v7 prompts), next to
+``pipeline_version``.
 """
 
 from __future__ import annotations
 
+import hashlib
 import time
+from pathlib import Path
 from typing import Any
 
 from .layers.check import run_checks
-from .layers.goal import goal_request, postprocess_goal, requirement_text
+from .layers.goal import goal_request, postprocess_goal, raw_goal_refs, requirement_text
 from .layers.scene import facts_request, inventory_request, parse_facts, parse_inventory
 from .layers.segment import coarse_subtasks, missing_output_segments, postprocess_segments, segments_request
 from .prompts.v7 import VERSION as PROMPT_VERSION
@@ -23,6 +29,23 @@ from .schema_v7 import episode_rows
 
 PIPELINE_VERSION = f"v-lite {PROMPT_VERSION}"
 STEPS = ("scene_inventory", "scene_facts", "segments", "goal")
+
+
+def pipeline_code(root: Path | None = None) -> str:
+    """First 12 hex of SHA-256 over the code that writes views and rows: ``layers/*.py``, ``vlite.py``,
+    ``schema_v7.py`` and ``prompts/v7/*`` (files only), in sorted path order, each as its path relative
+    to the package and its bytes with line endings normalized to LF."""
+    pkg = root or Path(__file__).resolve().parent
+    files = [*pkg.glob("layers/*.py"), pkg / "vlite.py", pkg / "schema_v7.py",
+             *(p for p in (pkg / "prompts" / "v7").glob("*") if p.is_file() and p.suffix != ".pyc")]
+    h = hashlib.sha256()
+    for rel, path in sorted((p.relative_to(pkg).as_posix(), p) for p in files):
+        h.update(rel.encode("utf-8") + b"\0")
+        h.update(path.read_bytes().replace(b"\r\n", b"\n") + b"\0")
+    return h.hexdigest()[:12]
+
+
+PIPELINE_CODE = pipeline_code()
 
 
 def _names(objects: list[dict[str, Any]]) -> dict[str, str]:
@@ -84,7 +107,7 @@ def run_episode(episode: Any, l1: dict[str, Any], caller: Any, *, arm: str, mode
     verdicts: list[dict[str, Any]] = []
     seg_ok = bool(res and res.valid)
     if seg_ok:
-        for s in res.data.get("segments", []):
+        for s in (res.data.get("segments", []) if isinstance(res.data, dict) else []):
             if isinstance(s, dict):
                 raw_refs += [str(s.get("target", "")), str(s.get("destination", ""))]
         segments, verdicts = postprocess_segments(res.data, episode.num_frames, l1, objects, repairs)
@@ -96,11 +119,13 @@ def run_episode(episode: Any, l1: dict[str, Any], caller: Any, *, arm: str, mode
     goal = None
     req, _ = goal_request(episode, l1, objects, facts, context, reasoning)
     res = do(req)
-    if res and res.valid:
+    if res and res.valid and isinstance(res.data, dict):
+        raw_refs += raw_goal_refs(res.data)
         goal = postprocess_goal(res.data, episode, l1, objects, segments, repairs)
     else:
         repairs.append(f"goal {res.status if res else 'not run'}: no goal record")
     # L5
+    no_output = not seg_ok and goal is None
     checks = run_checks(segments, coarse, goal, l1, objects, facts, raw_refs, have_inventory=have_inventory,
                         have_facts=have_facts)
     cost = round(sum(c.usd for c in calls), 8)
@@ -109,7 +134,7 @@ def run_episode(episode: Any, l1: dict[str, Any], caller: Any, *, arm: str, mode
     names = _names(objects)
     view = build_view(arm=arm, episode=episode, objects=objects, segments=segments, coarse=coarse, goal=goal,
                       checks=checks, cost=cost, calls=calls, wall=wall, valid=valid, repairs=repairs,
-                      no_output=not seg_ok and goal is None, names=names)
+                      no_output=no_output, names=names)
     view["candidate_verdicts"] = verdicts
     view["step_status"] = {s: (c.status if c else "not run") for s, c in
                            zip(STEPS, calls + [None] * (4 - len(calls)), strict=True)}
@@ -117,6 +142,9 @@ def run_episode(episode: Any, l1: dict[str, Any], caller: Any, *, arm: str, mode
                         model=getattr(caller, "model", "unknown"), pipeline_version=PIPELINE_VERSION, objects=objects,
                         facts=facts, segments=segments, coarse=coarse, goal=goal, l1=l1, checks=checks,
                         cost_usd=cost, source_model=getattr(caller, "model", "unknown"))
+    for r in rows:
+        if r.get("record_type") == "episode_metadata":
+            r["pipeline_code"] = PIPELINE_CODE
     return {"view": view, "rows": rows, "calls": calls, "repairs": repairs, "stopped": stopped,
             "episode_wall_s": round(time.perf_counter() - t0, 3), "objects": objects, "facts": facts,
             "segments": segments, "goal": goal}
@@ -170,4 +198,5 @@ def build_view(*, arm: str, episode: Any, objects: list[dict[str, Any]], segment
         "route_reasons": checks.get("route_reasons", []),
         "cost_usd": cost, "calls": len(calls), "wall_s": wall, "valid": valid, "repairs": list(repairs),
         "no_output": no_output, "cache_hits": sum(1 for c in calls if getattr(c, "cache_hit", False)),
+        "pipeline_version": PIPELINE_VERSION, "pipeline_code": PIPELINE_CODE,
     }

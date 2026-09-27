@@ -28,7 +28,7 @@ from typing import Any
 
 import numpy as np
 
-CODE_VERSION = "l1-2026-09-27.1"
+CODE_VERSION = "l1-2026-09-27.2"  # .2: a slip or a close that held is never a rest close
 
 
 @dataclass(frozen=True)
@@ -329,11 +329,16 @@ def attempts_from_events(events: list[dict[str, Any]], sig: dict[str, np.ndarray
 
 def split_rest_close(attempts: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """A last close on nothing after a release, with no opening after it, is the gripper going to rest
-    (teleoperators close the gripper once the object is placed); it is not a grasp attempt."""
+    (teleoperators close the gripper once the object is placed); it is not a grasp attempt.
+
+    Only an ``empty`` or ``unknown`` close that never held counts. A slip held something before it
+    was lost, so it stays a (failed) attempt, and so does any close with a hold frame.
+    """
     if len(attempts) >= 2:
         last = attempts[-1]
         released_before = any(a["outcome"] == "released" for a in attempts[:-1])
-        if last["outcome"] in ("empty", "unknown", "slip") and last["opening_onset"] is None and released_before:
+        if last["outcome"] in ("empty", "unknown") and last.get("hold_frame") is None \
+                and last["opening_onset"] is None and released_before:
             rest = dict(last)
             rest["note"] = "close after the last release with no opening after it: gripper going to rest"
             return attempts[:-1], [rest]
