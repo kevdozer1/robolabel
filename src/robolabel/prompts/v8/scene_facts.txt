@@ -1,0 +1,27 @@
+=== input ===
+These images are {n_images} frames of one video clip from camera {camera}: the first frame, the frames where the phases of the activity change, and the last frame. The line before each image gives its frame number, its time and the camera. The clip may show a robot, a humanoid or a person.
+
+=== task ===
+The dataset's task description is: "{task}".
+
+=== no_task ===
+The dataset gives no task description.
+
+=== objects ===
+Objects in the clip:
+{inventory_lines}
+
+Task objects: {task_objects}.
+
+=== rules ===
+Give one entry for every image, in the order shown:
+- frame and camera exactly as given in the line before the image;
+- visible: the IDs of objects clearly visible in that image;
+- partial: the IDs of objects only partly visible (cut off, covered, or too small to judge);
+  objects in neither list are taken as not visible;
+- in_gripper: the ID of the object held in a robot gripper or a hand, "none" if nothing is held, or "unsure";
+- relations: at most 4 facts among the task objects and any object that is held, each with subject and object IDs,
+  a relation (inside, on_top_of, touching) and a value (true, false, unsure);
+- boxes: only for images of frame {last_frame}; for every visible task object, its box as fractions of the image
+  width and height (x0, y0, x1, y1). For every other image give an empty list.
+Keep entries short.

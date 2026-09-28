@@ -9,6 +9,8 @@ start frame of the segment after a boundary placed there. Types by source:
 
 * ``gripper``: ``close_start`` and ``open_start`` (the onsets of L1's closing and opening runs) and
   ``arm_move`` (L1's low-confidence "the arm starts moving" candidates);
+* ``gripper_recovery`` (a label of the gripper source): ``open_start`` at the re-open after a failed close
+  and ``back_off`` where the arm then starts moving away (L1's recovery candidates, SPEC_V1_1 6);
 * ``motion``: ``pause_start`` and ``pause_end``;
 * ``none``: no events.
 
@@ -32,8 +34,13 @@ class Event(TypedDict):
 
 EVENT_TYPES = ("close_start", "open_start", "arm_move", "pause_start", "pause_end")
 SOURCE_NAMES = ("none", "motion", "gripper")
+# v1.1 recovery (SPEC_V1_1 6): the gripper source's events after a failed close carry this source label,
+# and the back-off is a type of its own. Kept apart from the tuples above, which name the sources and
+# the v1.1 core types; appended after them, so the order of the core types does not change.
+RECOVERY_EVENT_TYPES = ("back_off",)
+EVENT_SOURCE_LABELS = SOURCE_NAMES + ("gripper_recovery",)
 # Order of types at the same frame, so sorting is total and stable across runs.
-_TYPE_ORDER = {t: i for i, t in enumerate(EVENT_TYPES)}
+_TYPE_ORDER = {t: i for i, t in enumerate(EVENT_TYPES + RECOVERY_EVENT_TYPES)}
 CONFIDENCE_DIGITS = 4
 
 
@@ -41,7 +48,7 @@ def make_event(type: str, frame: int, confidence: float, source: str,
                attempt_idx: int | None = None) -> dict[str, Any]:
     """One event with normalized value types (int frame, confidence rounded to 4 digits in [0, 1])."""
     if type not in _TYPE_ORDER:
-        raise ValueError(f"unknown event type {type!r}; expected one of {', '.join(EVENT_TYPES)}")
+        raise ValueError(f"unknown event type {type!r}; expected one of {', '.join(_TYPE_ORDER)}")
     conf = min(1.0, max(0.0, float(confidence)))
     return {"type": str(type), "frame": int(frame), "confidence": round(conf, CONFIDENCE_DIGITS),
             "source": str(source), "attempt_idx": None if attempt_idx is None else int(attempt_idx)}
@@ -69,7 +76,7 @@ def validate_event(ev: Any) -> list[str]:
     c = ev.get("confidence")
     if not isinstance(c, float) or not 0.0 <= c <= 1.0:
         problems.append(f"confidence {c!r} is not a float in [0, 1]")
-    if ev.get("source") not in SOURCE_NAMES:
+    if ev.get("source") not in EVENT_SOURCE_LABELS:
         problems.append(f"source {ev.get('source')!r} is not a source name")
     a = ev.get("attempt_idx")
     if a is not None and (not isinstance(a, int) or isinstance(a, bool)):

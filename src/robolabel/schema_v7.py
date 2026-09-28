@@ -392,15 +392,29 @@ def _select(frame: pd.DataFrame, episode_id: str, arm: str | None, kind: str) ->
     return frame[sel].to_dict("records")
 
 
-def subtask_records_v11(frame: pd.DataFrame, episode_id: str, arm: str | None = None) -> list[dict[str, Any]]:
+def subtask_records_v11(frame: pd.DataFrame, episode_id: str, arm: str | None = None, *,
+                        derive: bool = True) -> list[dict[str, Any]]:
     """Subtask rows of one episode (and arm) in segment order, typed, with every v1.1 field (None in a v7
-    file)."""
+    file, except ``attempt_outcome``).
+
+    A row without ``attempt_outcome`` (a v7 file) gets it derived by the old rule (SPEC_V1_1 4: a reader
+    that finds none derives it; :func:`fill_attempt_outcome`, per arm); present values are kept.
+    ``derive=False`` leaves it None, as the file has it."""
     out = []
     for rec in _select(frame, episode_id, arm, "subtask"):
         clean = _clean_record(rec)
         clean.update(subtask_fields_v11(rec))
         out.append(clean)
-    return sorted(out, key=lambda r: (r.get("segment_idx") is None, r.get("segment_idx") or 0))
+    out.sort(key=lambda r: (r.get("segment_idx") is None, r.get("segment_idx") or 0))
+    if not derive:
+        return out
+    by_arm: dict[Any, list[int]] = {}
+    for k, r in enumerate(out):
+        by_arm.setdefault(r.get("arm"), []).append(k)
+    for ks in by_arm.values():
+        for k, filled in zip(ks, fill_attempt_outcome([out[k] for k in ks]), strict=True):
+            out[k] = filled
+    return out
 
 
 def episode_record_v11(frame: pd.DataFrame, episode_id: str, arm: str | None = None) -> dict[str, Any] | None:
@@ -416,19 +430,12 @@ def episode_record_v11(frame: pd.DataFrame, episode_id: str, arm: str | None = N
 def fill_attempt_outcome(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Copies of segments with ``attempt_outcome`` derived where it is missing (SPEC_V1_1 4).
 
-    The v7 rule marked every phase of a failed attempt ``outcome: failed``, so an attempt is ``failed``
-    when any of its phases failed, else ``aborted`` when any was aborted, else ``success``. Segments that
-    already carry an ``attempt_outcome`` keep it.
+    The one rule is :func:`robolabel.eval.failure.derive_attempt_outcome` (this function calls it): the v7
+    rule marked every phase of a failed attempt ``outcome: failed``, so an attempt is ``failed`` when any of
+    its phases failed (or has ``mistake: true``), else ``aborted`` when any was aborted, else ``success``; a
+    segment without an ``attempt_idx`` is an attempt of its own. Segments that already carry an
+    ``attempt_outcome`` keep it; items that are not mappings are dropped.
     """
-    by_attempt: dict[int | None, list[str]] = {}
-    for s in segments:
-        by_attempt.setdefault(_as_int(s.get("attempt_idx")), []).append(str(s.get("outcome") or ""))
-    derived = {idx: "failed" if "failed" in outs else ("aborted" if "aborted" in outs else "success")
-               for idx, outs in by_attempt.items()}
-    out = []
-    for s in segments:
-        seg = dict(s)
-        if _missing(seg.get("attempt_outcome")):
-            seg["attempt_outcome"] = derived[_as_int(seg.get("attempt_idx"))]
-        out.append(seg)
-    return out
+    from .eval.failure import derive_attempt_outcome
+
+    return derive_attempt_outcome(segments)

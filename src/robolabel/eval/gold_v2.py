@@ -11,6 +11,10 @@ The pilot annotation page (gold.html) saves a wrapper around several family file
 lists the non-blocking completeness warnings the page also shows. :func:`dump_gold` writes the
 canonical form: keys sorted, LF line endings, floats rounded to 6 decimals.
 
+SPEC_V1_1 4 adds an optional ``attempt_outcome`` to each segment (the result of its whole attempt;
+``outcome`` stays the phase's own result). Files without it still validate, and
+:func:`with_attempt_outcome` derives it for readers.
+
 jsonschema comes from the ``eval`` extra and is imported only when a document is validated.
 """
 
@@ -25,6 +29,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
+from .failure import attempt_key, derive_attempt_outcome, failure_convention_warnings
 from .lexicon import load_predicate_lexicon, predicate_value_type
 
 SCHEMA_VERSION = "robolabel/gold/v2"
@@ -337,11 +342,14 @@ def validate_gold_export(doc: Any) -> list[str]:
 def warnings_for_episode(ep: Mapping[str, Any]) -> list[str]:
     """Non-blocking completeness warnings for one episode, in a fixed order.
 
-    Missing phase classes, boundary qualities and failure types; a missing ``primary_target``;
-    missing robot ending slots (``holding``, ``gripper_open`` or ``gripper_closed``, a position
-    item); requirements with neither a value nor an unsure status; visibility not given for every
-    camera on required and unsure items; objects without a first-frame point; failed attempts
-    without the ``failed_attempt`` tag; coarse subtasks that do not cover the episode.
+    Missing phase classes, boundary qualities and failure types; the per-phase failure rule of
+    SPEC_V1_1 4 (:func:`robolabel.eval.failure.failure_convention_warnings`) and failed-attempt spans
+    that do not cover their whole attempt (:func:`failed_attempt_span_warnings`); a missing
+    ``primary_target``; missing robot ending slots (``holding``, ``gripper_open`` or
+    ``gripper_closed``, a position item); requirements with neither a value nor an unsure status;
+    visibility not given for every camera on required and unsure items; objects without a first-frame
+    point; failed attempts without the ``failed_attempt`` tag; coarse subtasks that do not cover the
+    episode.
     """
     if not isinstance(ep, Mapping):
         return ["the episode is not a JSON object"]
@@ -356,6 +364,8 @@ def warnings_for_episode(ep: Mapping[str, Any]) -> list[str]:
             warns.append(f"segment {k}: outcome failed without failure_type")
         if "segment_idx" in seg and seg.get("segment_idx") != k:
             warns.append(f"segment {k}: segment_idx is {seg.get('segment_idx')!r}, expected {k}")
+    warns.extend(failure_convention_warnings(segments))
+    warns.extend(failed_attempt_span_warnings(_as_list(ep.get("failed_attempts")), segments))
     if not ep.get("primary_target"):
         warns.append("missing primary_target")
 
@@ -392,6 +402,56 @@ def warnings_for_episode(ep: Mapping[str, Any]) -> list[str]:
 
 def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def failed_attempt_span_warnings(failed_attempts: list[Any], segments: list[Mapping[str, Any]]) -> list[str]:
+    """Failed-attempt spans that are not their whole attempt (SPEC_V1_1 4: the span runs from the first
+    frame of the attempt's first phase to the last frame of its last phase).
+
+    The attempt of a span is the ``attempt_idx`` of the segments it overlaps. A span that overlaps phases
+    of several attempts, or whose ends differ from its attempt's first and last frame, is listed.
+    """
+    hulls: dict[int, list[int]] = {}
+    spans: list[tuple[int, int, int]] = []
+    for s in segments:
+        key, start, end = attempt_key(s), s.get("start_frame"), s.get("end_frame")
+        if key is None or not isinstance(start, int) or not isinstance(end, int):
+            continue
+        spans.append((key, start, end))
+        hull = hulls.setdefault(key, [start, end])
+        hull[0], hull[1] = min(hull[0], start), max(hull[1], end)
+    warns: list[str] = []
+    for k, fa in enumerate(failed_attempts):
+        span = fa.get("span") if isinstance(fa, Mapping) else None
+        if not isinstance(span, list) or len(span) != 2 or not all(isinstance(v, int) for v in span):
+            continue
+        a, b = min(span), max(span)
+        keys = sorted({key for key, start, end in spans if start <= b and a <= end})
+        if len(keys) > 1:
+            warns.append(f"failed attempt {k}: span [{a}, {b}] overlaps the phases of attempts "
+                         f"{', '.join(str(x) for x in keys)}; a span covers one attempt")
+        elif len(keys) == 1 and hulls[keys[0]] != [a, b]:
+            lo, hi = hulls[keys[0]]
+            warns.append(f"failed attempt {k}: span [{a}, {b}] is not the whole attempt {keys[0]} (frames {lo} to "
+                         f"{hi}, from its first phase to its last)")
+    return warns
+
+
+def with_attempt_outcome(doc: Mapping[str, Any]) -> dict[str, Any]:
+    """A copy of a gold v2 family document, a gold.html export, or one episode, whose segments all carry
+    ``attempt_outcome`` (derived where absent, SPEC_V1_1 4: an attempt with a failed phase is failed on
+    every phase, else aborted when one phase was aborted, else success). Present values are kept."""
+    out = copy.deepcopy(dict(doc))
+    if isinstance(out.get("families"), Mapping):
+        out["families"] = {f: with_attempt_outcome(d) if isinstance(d, Mapping) else d
+                           for f, d in out["families"].items()}
+        return out
+    if isinstance(out.get("episodes"), list):
+        out["episodes"] = [with_attempt_outcome(ep) if isinstance(ep, Mapping) else ep for ep in out["episodes"]]
+        return out
+    if isinstance(out.get("segments"), list):
+        out["segments"] = derive_attempt_outcome(out["segments"])
+    return out
 
 
 # --------------------------------------------------------------------------- #

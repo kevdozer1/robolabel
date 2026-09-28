@@ -5,7 +5,8 @@
 
 * ``none``: no candidates (video alone);
 * ``motion``: pauses in the pixel motion of one camera, deterministic and free;
-* ``gripper``: the L1 gripper events (``close_start``, ``open_start``, ``arm_move``).
+* ``gripper``: the L1 gripper events (``close_start``, ``open_start``, ``arm_move``), plus the recovery
+  events after a failed close (``open_start`` and ``back_off``, source label ``gripper_recovery``).
 
 ``candidate_lines(events, num_frames, fps)`` renders them as plain prompt lines with IDs ``c1, c2, ...``
 and ``candidate_map(events)`` resolves those IDs back to events.
@@ -17,7 +18,9 @@ import json
 from typing import Any
 
 from .base import (
+    EVENT_SOURCE_LABELS,
     EVENT_TYPES,
+    RECOVERY_EVENT_TYPES,
     SOURCE_NAMES,
     Event,
     EventSource,
@@ -28,7 +31,7 @@ from .base import (
     sort_events,
     validate_event,
 )
-from .gripper import GripperSource, events_from_l1
+from .gripper import GripperSource, events_from_l1, recovery_events
 from .motion import MOTION_VERSION, MotionSource, motion_signal, pause_events
 from .none import NoneSource
 
@@ -50,7 +53,9 @@ def dumps_events(events: list[dict[str, Any]]) -> str:
 
 
 __all__ = [
-    "EVENT_TYPES", "SOURCE_NAMES", "MOTION_VERSION", "Event", "EventSource", "GripperSource", "MotionSource",
+    "EVENT_SOURCE_LABELS", "EVENT_TYPES", "RECOVERY_EVENT_TYPES", "SOURCE_NAMES", "MOTION_VERSION", "Event",
+    "EventSource", "GripperSource", "MotionSource",
     "NoneSource", "candidate_ids", "candidate_lines", "candidate_map", "dumps_events", "events_from_l1",
-    "get_source", "make_event", "motion_signal", "pause_events", "sort_events", "validate_event",
+    "get_source", "make_event", "motion_signal", "pause_events", "recovery_events", "sort_events",
+    "validate_event",
 ]

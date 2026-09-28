@@ -16,7 +16,8 @@ cannot match any gold item, or a gold ending item that no predicted item could m
 
 G2 part (ii) (a requirement about something that exists only inside a gold failed span) needs the
 blind judge. Each predicted requirement of an episode with a gold failed attempt becomes a judge
-item ``g2|<episode_key>|<normalized requirement text>``; the answer is yes (copied) or no.
+item ``g2|<episode_key>|<normalized requirement text>``; the answer is yes (copied) or no. G2 part (i)
+follows the failure convention of the prediction (SPEC_V1_1 4, :mod:`robolabel.eval.failure`).
 
 Every metric returns ``{"numerator", "denominator", "pending"}``. Pure functions.
 """
@@ -26,6 +27,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
+from .failure import derive_attempt_outcome, failure_marked, inside_share, resolve_convention
 from .lexicon import OTHER, map_predicate, normalize_name, words
 from .semantic import (
     PENDING,
@@ -49,6 +51,8 @@ PENDING_REF = "<pending>"
 UNRESOLVED_REF = "<unresolved>"
 REGION_PREFIX = "region:"
 G2_SEGMENT_MIN_IOU = 0.5
+# v1.1 (SPEC_V1_1 4): a segment is "inside a gold failed attempt" when at least this share of its frames is
+G2_INSIDE_MIN_SHARE = 0.5
 JUDGE_G2 = "g2"
 # Names a robot end-state item may give its subject; they mean "no object" there. A subject made
 # only of ROBOT_PART_WORDS ("robot's gripper", "gripper fingers") counts too.
@@ -386,23 +390,8 @@ def _judge_yes_no(answer: Any) -> bool | None:
     return None
 
 
-def g2_episode(pred_segments: Sequence[Mapping[str, Any]], pred_coarse: Sequence[Mapping[str, Any]],
-               gold_failed_attempts: Sequence[Mapping[str, Any]], pred_requirements_raw: Sequence[Any],
-               *, episode_key: str | None = None,
-               judge_answers: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    """G2 for one episode; the denominator is 1 only when the gold has a failed attempt.
-
-    Part (i): a predicted segment with IoU >= 0.5 to a gold failed span that is not marked failed,
-    aborted or mistake; or a coarse subtask overlapping a gold failed span whose text narrates the
-    attempt or its failure (:func:`narrates_failure`). Part (ii): the blind judge says a predicted
-    requirement refers to something that exists only inside a gold failed span. ``judge_answers``
-    maps ``g2|<episode_key>|<text>`` (or the normalized text alone) to yes or no.
-    """
-    spans = [s for s in (as_span(fa) for fa in gold_failed_attempts if isinstance(fa, Mapping)) if s]
-    empty = counts(0, 0)
-    if not spans:
-        return {"counts": {"G2": empty, "G2-i": dict(empty), "G2-ii": dict(empty)}, "ok": True,
-                "applicable": False, "part_i_hits": [], "judge_items": []}
+def _segment_hits_v7(pred_segments: Sequence[Mapping[str, Any]], spans: list[tuple[int, int]]) -> list[dict[str, Any]]:
+    """Part (i) before v1.1: IoU >= 0.5 with a gold failed span and not marked failed, aborted or mistake."""
     hits: list[dict[str, Any]] = []
     for k, seg in enumerate(pred_segments):
         sp = as_span(seg)
@@ -410,6 +399,51 @@ def g2_episode(pred_segments: Sequence[Mapping[str, Any]], pred_coarse: Sequence
             iou = span_iou(sp, gs)
             if iou >= G2_SEGMENT_MIN_IOU and not _marked_not_normal(seg):
                 hits.append({"source": "segment", "index": k, "gold_span": list(gs), "iou": round(iou, 6)})
+    return hits
+
+
+def _segment_hits_v11(pred_segments: Sequence[Mapping[str, Any]], spans: list[tuple[int, int]]) -> list[dict[str, Any]]:
+    """Part (i) under SPEC_V1_1 4: a segment inside a gold failed attempt (at least half of its frames in the
+    span) that neither its ``attempt_outcome`` nor its ``mistake`` (nor its own outcome) marks as failed."""
+    hits: list[dict[str, Any]] = []
+    positions = [k for k, s in enumerate(pred_segments) if isinstance(s, Mapping)]
+    for k, seg in zip(positions, derive_attempt_outcome(pred_segments), strict=True):
+        for gs in spans:
+            share = inside_share(seg, gs)
+            if share >= G2_INSIDE_MIN_SHARE and not failure_marked(seg):
+                hits.append({"source": "segment", "index": k, "gold_span": list(gs),
+                             "iou": round(span_iou(as_span(seg), gs), 6), "inside_share": round(share, 6)})
+    return hits
+
+
+def g2_episode(pred_segments: Sequence[Mapping[str, Any]], pred_coarse: Sequence[Mapping[str, Any]],
+               gold_failed_attempts: Sequence[Mapping[str, Any]], pred_requirements_raw: Sequence[Any],
+               *, episode_key: str | None = None,
+               judge_answers: Mapping[str, Any] | None = None, convention: str = "auto") -> dict[str, Any]:
+    """G2 for one episode; the denominator is 1 only when the gold has a failed attempt.
+
+    Part (i), segments, by the failure convention of the prediction (``failure.resolve_convention``:
+    ``auto`` reads ``v11`` when a predicted segment carries ``attempt_outcome``, else ``v7``):
+
+    - ``v7`` (outputs older than v1.1, scored as before): a predicted segment with IoU >= 0.5 to a gold
+      failed span that is not marked failed, aborted or mistake;
+    - ``v11`` (SPEC_V1_1 4): a predicted segment inside a gold failed attempt (at least half of its frames
+      in the span) is copied only when neither its ``attempt_outcome`` nor its ``mistake`` marks the
+      failure (its own outcome failed or aborted also marks it); ``attempt_outcome`` is derived from the
+      v7 rule where absent.
+
+    Part (i), coarse: a coarse subtask overlapping a gold failed span whose text narrates the attempt or
+    its failure (:func:`narrates_failure`). Part (ii): the blind judge says a predicted requirement refers
+    to something that exists only inside a gold failed span. ``judge_answers`` maps
+    ``g2|<episode_key>|<text>`` (or the normalized text alone) to yes or no.
+    """
+    spans = [s for s in (as_span(fa) for fa in gold_failed_attempts if isinstance(fa, Mapping)) if s]
+    rule = resolve_convention(pred_segments, convention)
+    empty = counts(0, 0)
+    if not spans:
+        return {"counts": {"G2": empty, "G2-i": dict(empty), "G2-ii": dict(empty)}, "ok": True,
+                "applicable": False, "part_i_hits": [], "judge_items": [], "convention": rule}
+    hits = _segment_hits_v7(pred_segments, spans) if rule == "v7" else _segment_hits_v11(pred_segments, spans)
     for k, item in enumerate(pred_coarse):
         sp = as_span(item)
         if sp is None or not narrates_failure(item.get("text")):
@@ -462,6 +496,7 @@ def g2_episode(pred_segments: Sequence[Mapping[str, Any]], pred_coarse: Sequence
         "applicable": True,
         "part_i_hits": hits,
         "judge_items": items,
+        "convention": rule,
     }
 
 

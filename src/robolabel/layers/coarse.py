@@ -43,6 +43,9 @@ from .frames import camera_label, even_frames, frame_line, model_jpeg
 
 MODES = ("frames", "video")
 SNAP_TYPES = ("close_start", "open_start")
+# event sources a close or open boundary snaps to: the L1 gripper events, and the re-open after a failed
+# close, which the gripper source labels gripper_recovery (SPEC_V1_1 6; SPEC_QUESTIONS Q178)
+SNAP_SOURCES = ("gripper", "gripper_recovery")
 TEXT_MAX = 120
 
 # the phase that fails first for each failure type (MEASUREMENT_SPEC 3.4.5 and 3.4.9); used only to pick
@@ -306,12 +309,13 @@ def _contiguous(segs: list[dict[str, Any]], last: int, repairs: list[str]) -> li
 
 def _snap_to_gripper(out: list[dict[str, Any]], cmap: dict[str, dict[str, Any]], repairs: list[str]) -> None:
     """SPEC 3.3 item 10: a close_start or open_start boundary tied to a gripper candidate of the same type
-    takes that event's frame as its onset (``boundary_source: signal``). Other candidates are hints only."""
+    (source ``gripper``, or ``gripper_recovery`` for the re-open after a failed close) takes that event's
+    frame as its onset (``boundary_source: signal``). Other candidates are hints only."""
     for i in range(len(out) - 1):
         seg, nxt = out[i], out[i + 1]
         cid = seg["candidate_id"]
         ev = cmap.get(cid)
-        if ev is None or ev.get("source") != "gripper" or seg["end_event"] not in SNAP_TYPES:
+        if ev is None or ev.get("source") not in SNAP_SOURCES or seg["end_event"] not in SNAP_TYPES:
             continue
         if ev.get("type") != seg["end_event"]:
             repairs.append(f"coarse: {cid} is a {ev.get('type')} event, so the {seg['end_event']} boundary at "

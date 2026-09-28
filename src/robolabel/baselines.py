@@ -9,15 +9,34 @@
 * ``b2b@<model>``: today's robolabel default (S2-open segmentation plus the quality call) turned into
   a view record: phase names mapped with the lexicon, targets as free text, the compiled goal, and the
   episode outcome from the quality call's task success.
+
+Failure convention: every builder takes ``failure_convention``. The default ``"v7"`` gives the views
+exactly as before (in ``sig_only`` the approach before an empty or slipped close is failed too, with
+``mistake``). ``"v11"`` follows SPEC_V1_1 4: each phase's ``outcome`` is its own result (that approach is
+``success``, the grasp ``failed``), ``mistake`` is true only on the grasp that failed, every segment gets
+``attempt_outcome`` (the result of its whole attempt), and a failed ``sig_only`` attempt record gets the
+L1 ``evident_frame``. The attempt records keep the whole span under both.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from .eval.failure import derive_attempt_outcome
 from .eval.lexicon import coarse_groups, compiled_goal, map_phase
 
 CANONICAL5 = ["approach", "grasp", "transport", "release", "retract"]
+FAILURE_CONVENTIONS = ("v7", "v11")
+
+
+def _check_convention(failure_convention: str) -> None:
+    if failure_convention not in FAILURE_CONVENTIONS:
+        raise ValueError(f"failure_convention must be one of {FAILURE_CONVENTIONS}, not {failure_convention!r}")
+
+
+def _with_attempt_outcome(segs: list[dict[str, Any]], failure_convention: str) -> list[dict[str, Any]]:
+    """v11: every segment gets ``attempt_outcome`` (SPEC_V1_1 4); v7: the segments as they are."""
+    return derive_attempt_outcome(segs) if failure_convention == "v11" else segs
 
 
 def _seg(start: int, end: int, phase: str, *, outcome: str = "success", failure: str = "none", attempt: int = 1,
@@ -46,7 +65,11 @@ def _contiguous(segs: list[dict[str, Any]], n: int) -> list[dict[str, Any]]:
     return out
 
 
-def sig_only_segments(l1: dict[str, Any]) -> list[dict[str, Any]]:
+def sig_only_segments(l1: dict[str, Any], *, failure_convention: str = "v7") -> list[dict[str, Any]]:
+    """Segments from L1 events. ``failure_convention``: ``"v7"`` (default, the output as before) or
+    ``"v11"`` (SPEC_V1_1 4: the approach before an empty or slipped close keeps outcome success and no
+    mistake, and every segment carries ``attempt_outcome``)."""
+    _check_convention(failure_convention)
     n = int(l1["num_frames"])
     cands = {(c["attempt_idx"], c["transition"]): c["frame"] for c in l1.get("candidates", [])}
     segs: list[dict[str, Any]] = []
@@ -61,7 +84,8 @@ def sig_only_segments(l1: dict[str, Any]) -> list[dict[str, Any]]:
             # V_LITE: only empty and slipped attempts are failed; an aborted close (the fingers opened
             # again at once) or an unknown one is an ordinary approach and grasp
             failed = a["outcome"] in ("empty", "slip")
-            if segs and segs[-1]["phase_class"] == "approach" and failed:
+            if segs and segs[-1]["phase_class"] == "approach" and failed and failure_convention == "v7":
+                # v7 marked every phase of a failed attempt; v11 leaves the approach its own result
                 segs[-1].update(outcome="failed", failure_type=a["failure_type"], mistake=True)
             end = int(a["opening_onset"]) - 1 if a.get("opening_onset") is not None else max(on, int(a["event_frame"]))
             segs.append(_seg(on, max(on, end), "grasp", attempt=i, outcome="failed" if failed else "success",
@@ -89,7 +113,7 @@ def sig_only_segments(l1: dict[str, Any]) -> list[dict[str, Any]]:
             segs.append(_seg(cursor, n - 1, "retract", attempt=attempts[-1]["attempt_idx"]))
         elif segs:
             segs[-1]["end"] = n - 1
-    return _contiguous(segs, n)
+    return _with_attempt_outcome(_contiguous(segs, n), failure_convention)
 
 
 def _goal_view(goal: dict[str, Any], l1: dict[str, Any] | None) -> dict[str, Any]:
@@ -155,20 +179,43 @@ def _coarse(segs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             for g in groups]
 
 
-def sig_only_view(l1: dict[str, Any], meta: dict[str, Any]) -> dict[str, Any]:
-    segs = sig_only_segments(l1)
+def _with_evident_frames(attempts: list[dict[str, Any]], segs: list[dict[str, Any]],
+                         l1: dict[str, Any]) -> list[dict[str, Any]]:
+    """v11: a failed attempt record gets its L1 attempt's ``event_frame`` as ``evident_frame`` (SPEC_V1_1 4).
+    Records come from :func:`_attempts_from_segments`, one per attempt number in ascending order."""
+    numbers = sorted({int(s.get("attempt_idx") or 1) for s in segs})
+    frames = {int(a["attempt_idx"]): a.get("event_frame") for a in l1.get("attempts", [])
+              if a.get("attempt_idx") is not None}
+    out = []
+    for idx, rec in zip(numbers, attempts, strict=True):
+        rec = dict(rec)
+        if rec["outcome"] == "failed" and frames.get(idx) is not None:
+            rec["evident_frame"] = int(frames[idx])
+        out.append(rec)
+    return out
+
+
+def sig_only_view(l1: dict[str, Any], meta: dict[str, Any], *, failure_convention: str = "v7") -> dict[str, Any]:
+    """The ``sig_only`` view record; ``failure_convention`` as in :func:`sig_only_segments`."""
+    segs = sig_only_segments(l1, failure_convention=failure_convention)
     goal = compiled_goal(segs)
     v = _base_view("sig_only", meta)
-    v.update(segments=segs, coarse=_coarse(segs), attempts=_attempts_from_segments(segs, "signal"),
+    attempts = _attempts_from_segments(segs, "signal")
+    if failure_convention == "v11":
+        attempts = _with_evident_frames(attempts, segs, l1)
+    v.update(segments=segs, coarse=_coarse(segs), attempts=attempts,
              goal=_goal_view(goal, l1), episode_outcome="unknown")
     return v
 
 
-def uniform5_view(meta: dict[str, Any]) -> dict[str, Any]:
+def uniform5_view(meta: dict[str, Any], *, failure_convention: str = "v7") -> dict[str, Any]:
+    """Baseline B4; ``failure_convention="v11"`` adds ``attempt_outcome`` (success) to every segment."""
+    _check_convention(failure_convention)
     n = int(meta["num_frames"])
     edges = [round(i * n / 5) for i in range(6)]
     segs = [_seg(edges[i], edges[i + 1] - 1, CANONICAL5[i], source="uniform") for i in range(5)]
     segs[-1]["end"] = n - 1
+    segs = _with_attempt_outcome(segs, failure_convention)
     goal = compiled_goal(segs)
     v = _base_view("uniform5", meta)
     v.update(segments=segs, coarse=_coarse(segs), attempts=_attempts_from_segments(segs, "uniform"),
@@ -186,8 +233,11 @@ def outcome_from_task_success(q: Any) -> str:
 
 
 def legacy_view(arm: str, meta: dict[str, Any], subtasks: list[Any], metadata: Any, *, cost: float, calls: int,
-                wall_s: float, valid: bool, repairs: list[str], cache_hits: int = 0) -> dict[str, Any]:
-    """B2b: legacy SubtaskSegment list plus EpisodeMetadata to a view record (compiled goal)."""
+                wall_s: float, valid: bool, repairs: list[str], cache_hits: int = 0,
+                failure_convention: str = "v7") -> dict[str, Any]:
+    """B2b: legacy SubtaskSegment list plus EpisodeMetadata to a view record (compiled goal).
+    ``failure_convention="v11"`` adds ``attempt_outcome`` (success) to every segment."""
+    _check_convention(failure_convention)
     segs = []
     for s in subtasks:
         phase = map_phase(getattr(s, "phase", None) or getattr(s, "subtask_text", "")) if (
@@ -197,6 +247,7 @@ def legacy_view(arm: str, meta: dict[str, Any], subtasks: list[Any], metadata: A
                      "phase_text": getattr(s, "phase", None) or s.subtask_text, "target_name": tgt,
                      "destination_name": "none", "attempt_idx": 1, "outcome": "success", "failure_type": "none",
                      "mistake": False, "boundary_source": "vlm", "subtask_text": s.subtask_text})
+    segs = _with_attempt_outcome(segs, failure_convention)
     goal = compiled_goal(segs)
     v = _base_view(arm, meta)
     v.update(segments=segs, coarse=[{"start": s["start"], "end": s["end"], "text": s["subtask_text"],

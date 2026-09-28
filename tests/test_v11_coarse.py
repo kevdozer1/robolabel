@@ -129,7 +129,7 @@ def test_v8_schemas_follow_the_v7_schema_rules():
     assert list(vitem["properties"])[2:] == list(item["properties"])[2:]
     assert v8.SCHEMAS["crawl"] == {"type": "object", "additionalProperties": False, "required": ["answer"],
                                    "properties": {"answer": {"type": "integer"}}}
-    assert v8.MAX_TOKENS == {"coarse": 8000, "crawl": 2500}
+    assert {k: v8.MAX_TOKENS[k] for k in ("coarse", "crawl")} == {"coarse": 8000, "crawl": 2500}
     assert v8.PHASE_CLASSES is v7.PHASE_CLASSES and v8.FAILURE_TYPES is v7.FAILURE_TYPES
 
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "robolabel gold v2 family file",
-  "description": "One gold v2 file per family (MEASUREMENT_SPEC 3.2). Structure and enums only; the semantic rules (contiguous segments, object references, unsure_kind iff unsure, episode_key) are checked by robolabel.eval.gold_v2.validate_gold.",
+  "description": "One gold v2 file per family (MEASUREMENT_SPEC 3.2). Structure and enums only; the semantic rules (contiguous segments, object references, unsure_kind iff unsure, episode_key) are checked by robolabel.eval.gold_v2.validate_gold. A segment's optional attempt_outcome (SPEC_V1_1 4) is the result of its whole attempt; readers derive it when absent (robolabel.eval.gold_v2.with_attempt_outcome).",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "family", "guide_version", "episodes"],
@@ -93,6 +93,7 @@
         "destination": {"$ref": "#/$defs/ref_or_null"},
         "attempt_idx": {"type": "integer", "minimum": 1},
         "outcome": {"$ref": "#/$defs/outcome"},
+        "attempt_outcome": {"$ref": "#/$defs/outcome"},
         "failure_type": {"$ref": "#/$defs/failure_type_or_null"},
         "end_boundary_quality": {"$ref": "#/$defs/end_boundary_quality_or_null"},
         "coarse_idx": {"type": ["integer", "null"], "minimum": 0},

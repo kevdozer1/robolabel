@@ -32,6 +32,16 @@ to the access log (``eval/heldout_access_log.jsonl``). Dev-only calls log nothin
 
 Nothing here makes a network call. The guard runs ``git rev-parse HEAD`` (read-only) when the
 caller passes no commit.
+
+Clip keys (robolabel v1.1): family ``C`` is reserved for short clips outside every benchmark split, keyed
+``C/<clip id>`` (a clip id is letters, digits, ``_``, ``-`` and ``.``; the family is read in either case and
+written ``C``). The guard accepts a ``C/...`` key
+only when the caller put it on the guard's clip allowlist (``HeldoutGuard(..., clip_keys=[...])`` or
+:meth:`HeldoutGuard.allow_clip_keys`, for example the keys of the clip list the run uses); any other
+``C/...`` key is refused (HeldoutRefused, reason ``clip_not_allowed``) and the refusal is logged with the
+refused keys under ``clip_keys``, whatever ``final`` says. Allowed clip keys are dev and log nothing. The
+other families behave as before, and :func:`parse_episode_key` and :func:`normalize_episode_key` still
+accept only ``<family>/<episode_index>`` keys.
 """
 
 from __future__ import annotations
@@ -88,14 +98,77 @@ def _sort_key(key: str) -> tuple[str, int]:
     return parse_episode_key(key)
 
 
-def require_explicit_episodes(episodes: Any) -> list[str]:
+# ---------------------------------------------------------------------------
+# clip keys (v1.1)
+# ---------------------------------------------------------------------------
+
+CLIP_FAMILY = "C"
+_CLIP_KEY_RE = re.compile(r"^[Cc]/([A-Za-z0-9][A-Za-z0-9_.-]*)$")
+
+
+def is_clip_key(key: Any) -> bool:
+    """True for a string whose family (the part before the first ``/``) is ``C`` in either case: ``c/12`` is a
+    clip key too, so it meets the clip allowlist instead of passing as an unlisted family."""
+    return isinstance(key, str) and "/" in key and key.strip().split("/", 1)[0].upper() == CLIP_FAMILY
+
+
+def normalize_clip_key(key: Any) -> str:
+    """A clip key ``C/<clip id>`` with surrounding space removed and the family upper case (``c/x`` becomes
+    ``C/x``; the clip id keeps its case). Raises ValueError for anything else."""
+    if not isinstance(key, str):
+        raise ValueError(f"clip keys are strings 'C/<clip id>', got {type(key).__name__} {key!r}")
+    m = _CLIP_KEY_RE.match(key.strip())
+    if m is None:
+        raise ValueError(f"malformed clip key {key!r}; expected 'C/<clip id>' (letters, digits, '_', '-', '.')")
+    return f"{CLIP_FAMILY}/{m.group(1)}"
+
+
+def _any_key(key: Any) -> str:
+    return normalize_clip_key(key) if is_clip_key(key) else normalize_episode_key(key)
+
+
+def _mixed_sort_key(key: str) -> tuple[int, str, int, str]:
+    if is_clip_key(key):
+        return (1, CLIP_FAMILY, 0, key)
+    family, index = parse_episode_key(key)
+    return (0, family, index, "")
+
+
+def load_clip_keys(path: str | Path) -> list[str]:
+    """The ``C/...`` keys of a clip list file (YAML or JSON with a ``clips`` list of ``{"key": ...}``), in
+    file order. Keys of other families (a clip cut from a benchmark episode, such as ``F3/1821``) are left
+    out: the guard checks those as ordinary episode keys."""
+    import yaml
+
+    doc = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    clips = doc.get("clips") if isinstance(doc, dict) else None
+    if not isinstance(clips, list):
+        raise ValueError("a clip list needs a 'clips' list of {key: ...} entries")
+    out: list[str] = []
+    for c in clips:
+        key = c.get("key") if isinstance(c, dict) else None
+        if is_clip_key(key):
+            k = normalize_clip_key(key)
+            if k not in out:
+                out.append(k)
+    return out
+
+
+def require_explicit_episodes(episodes: Any, *, allow_clip_keys: bool = False) -> list[str]:
     """Normalized copy of an explicit, non-empty list (or tuple) of episode keys.
 
     Raises ValueError for None, an int, a range, a single string, any other non-list, an empty list,
     a malformed key or a repeated key. Every command that takes episodes takes an explicit list:
     ``robolabel run`` took ``list(range(limit))``, and on F1 a prefix of 8 includes held-out
-    episodes 2, 6 and 7.
+    episodes 2, 6 and 7. With ``allow_clip_keys=True`` a ``C/<clip id>`` key is accepted too (the default
+    keeps the old behavior); whether a clip key may be used is the guard's decision (its clip allowlist).
     """
+    if allow_clip_keys and isinstance(episodes, (list, tuple)) and episodes:
+        keys = [_any_key(k) for k in episodes]
+        repeated = sorted((k for k, n in Counter(keys).items() if n > 1), key=_mixed_sort_key)
+        if repeated:
+            raise ValueError(f"episode list repeats keys: {', '.join(repeated)}")
+        return keys
     if episodes is None:
         raise ValueError("episodes must be an explicit list of episode keys, got None")
     if isinstance(episodes, range):
@@ -192,9 +265,22 @@ def filter_dev(keys: Iterable[str], heldout: Iterable[str] | HeldoutGuard) -> li
     """``keys`` without the held-out ones, in their original order (for display code).
 
     ``heldout`` is a set from :func:`load_heldout_keys` or a :class:`HeldoutGuard`. A malformed key
-    raises ValueError rather than being shown or silently dropped.
+    raises ValueError rather than being shown or silently dropped. A ``C/...`` clip key needs a guard: it is
+    kept when it is on the guard's clip allowlist and dropped otherwise; with a set it raises ValueError.
     """
-    sealed = heldout.heldout if isinstance(heldout, HeldoutGuard) else {normalize_episode_key(k) for k in heldout}
+    if isinstance(heldout, HeldoutGuard):
+        out = []
+        for k in keys:
+            if is_clip_key(k):
+                if normalize_clip_key(k) in heldout.clip_keys:
+                    out.append(k)
+            elif normalize_episode_key(k) not in heldout.heldout:
+                out.append(k)
+        return out
+    sealed = {normalize_episode_key(k) for k in heldout}
+    for k in keys:
+        if is_clip_key(k):
+            raise ValueError(f"clip key {k!r} needs a HeldoutGuard with a clip allowlist to be judged")
     return [k for k in keys if normalize_episode_key(k) not in sealed]
 
 
@@ -268,10 +354,15 @@ class HeldoutGuard:
     A key of a family that ``heldout_ids.json`` does not list is not held-out by that file: with
     ``allow_unlisted_families=True`` (the default) the guard treats it as dev and emits a
     RuntimeWarning naming the family; with False it raises ValueError.
+
+    ``clip_keys`` is the clip allowlist (v1.1): the ``C/<clip id>`` keys this guard accepts as dev. Every
+    other ``C/...`` key is refused and logged (see the module text). The default, no allowlist, refuses
+    every clip key.
     """
 
     def __init__(self, heldout_ids_path: str | Path, access_log_path: str | Path,
-                 prereg_path: str | Path | None = None, *, allow_unlisted_families: bool = True):
+                 prereg_path: str | Path | None = None, *, allow_unlisted_families: bool = True,
+                 clip_keys: Iterable[str] | None = None):
         self.heldout_ids_path = Path(heldout_ids_path)
         self.access_log_path = Path(access_log_path)
         self.prereg_path = Path(prereg_path) if prereg_path is not None else None
@@ -281,18 +372,37 @@ class HeldoutGuard:
         self.heldout: frozenset[str] = frozenset(k for keys in by_family.values() for k in keys)
         self.heldout_ids_sha256 = sha256_bytes(raw)
         self._log = JsonlWriter(self.access_log_path)
+        self.clip_keys: frozenset[str] = frozenset()
+        if clip_keys is not None:
+            self.allow_clip_keys(clip_keys)
+
+    def allow_clip_keys(self, clip_keys: Iterable[str]) -> None:
+        """Add ``C/<clip id>`` keys to the clip allowlist. Raises ValueError for a single string or for a
+        key that is not a clip key (the allowlist holds clip keys only)."""
+        if isinstance(clip_keys, (str, bytes)):
+            raise ValueError("clip_keys must be a list of clip keys, not a single string")
+        added = []
+        for k in clip_keys:
+            if not is_clip_key(k):
+                raise ValueError(f"the clip allowlist takes 'C/<clip id>' keys only, got {k!r}")
+            added.append(normalize_clip_key(k))
+        self.clip_keys = self.clip_keys | frozenset(added)
 
     def heldout_in(self, episode_keys: Iterable[str]) -> list[str]:
-        """The held-out keys among ``episode_keys``, normalized and sorted."""
+        """The held-out keys among ``episode_keys``, normalized and sorted (a clip key is never held-out)."""
         return sorted({k for k in self._normalize(episode_keys) if k in self.heldout}, key=_sort_key)
+
+    def clips_refused(self, episode_keys: Iterable[str]) -> list[str]:
+        """The ``C/...`` keys among ``episode_keys`` that are not on the clip allowlist, normalized and sorted."""
+        return sorted({k for k in self._normalize(episode_keys) if is_clip_key(k) and k not in self.clip_keys})
 
     def _normalize(self, episode_keys: Iterable[str]) -> list[str]:
         if episode_keys is None:
             raise ValueError("episode_keys must be a list of keys, got None")
         if isinstance(episode_keys, (str, bytes)):
             raise ValueError("episode_keys must be a list of keys, not a single string")
-        keys = [normalize_episode_key(k) for k in episode_keys]
-        unlisted = sorted({k.split("/", 1)[0] for k in keys} - self.families)
+        keys = [_any_key(k) for k in episode_keys]
+        unlisted = sorted({k.split("/", 1)[0] for k in keys if not is_clip_key(k)} - self.families)
         if unlisted:
             where = self.heldout_ids_path.name
             if not self.allow_unlisted_families:
@@ -327,10 +437,34 @@ class HeldoutGuard:
         Raises HeldoutRefused (naming how many held-out keys) when refused, ValueError for None, a
         single string, a malformed key, or (with ``allow_unlisted_families=False``) an unlisted family.
         An empty list involves no held-out key, so it returns without logging. When the access log
-        cannot be written, an allowed call raises the OSError instead of proceeding.
+        cannot be written, an allowed call raises the OSError instead of proceeding. A ``C/...`` key that
+        is not on the clip allowlist is refused (and logged) before anything else; allowed clip keys are dev.
         """
         keys = self._normalize(episode_keys)
         involved = sorted({k for k in keys if k in self.heldout}, key=_sort_key)
+        stray = sorted({k for k in keys if is_clip_key(k) and k not in self.clip_keys})
+        if stray:  # a clip key off the allowlist: refused whatever ``final`` says, and logged
+            entry = {
+                "utc_time": utc_now(),
+                "command": _redact_paths(str(command)),
+                "commit": commit if commit is not None else _git_head(self.heldout_ids_path.parent),
+                "user": _current_user(),
+                "heldout_keys": involved,
+                "n_heldout": len(involved),
+                "n_keys": len(set(keys)),
+                "outcome": "refused",
+                "reason": "clip_not_allowed",
+                "final": _final_for_log(final),
+                "heldout_ids_sha256": self.heldout_ids_sha256,
+                "clip_keys": stray,
+            }
+            message = (f"refused: {len(stray)} clip key(s) not on the clip allowlist in this call: "
+                       f"{', '.join(stray)} (clip_not_allowed)")
+            try:
+                self._log.write(entry)
+            except OSError as exc:
+                raise HeldoutRefused(message + "; the access log could not be written") from exc
+            raise HeldoutRefused(message)
         if not involved:
             return
         allowed, reason = self._final_ok(final)

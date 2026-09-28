@@ -118,8 +118,11 @@ def test_v7_files_read_with_the_v11_fields_absent(tmp_path):
     subs = subtask_records_v11(frame, "F1/0")
     assert len(subs) == 3
     for s in subs:
-        assert {k: s[k] for k in ("end_event", "coarse_end_frame", "crawl_calls", "attempt_outcome",
-                                  "event_sources")} == dict.fromkeys(SUBTASK_V11)
+        assert {k: s[k] for k in ("end_event", "coarse_end_frame", "crawl_calls",
+                                  "event_sources")} == dict.fromkeys(set(SUBTASK_V11) - {"attempt_outcome"})
+    # SPEC_V1_1 4: a reader that finds no attempt_outcome derives it by the old rule
+    assert [s["attempt_outcome"] for s in subs] == ["success"] * 3
+    assert [s["attempt_outcome"] for s in subtask_records_v11(frame, "F1/0", derive=False)] == [None] * 3
     assert [s["boundary_source"] for s in subs] == ["coarse", "crawl", "crawl"]  # the v7 column
     meta = episode_record_v11(frame, "F1/0")
     assert {k: meta[k] for k in EPISODE_V11} == dict.fromkeys(EPISODE_V11)
@@ -152,6 +155,30 @@ def test_episode_fields_and_validation():
     assert len(validate_v11_row(bad)) == 6
     assert validate_v11_row({}) == []
     assert validate_v11_row({"boundary_source": "signal", "end_event": "contact_end", "crawl_calls": 0}) == []
+
+
+def test_v7_file_with_a_failed_attempt_reads_with_derived_attempt_outcome(tmp_path):
+    """A v7 file (every phase of the failed attempt has outcome failed, no attempt_outcome column) read by the
+    v1.1 reader: attempt_outcome comes from the old rule, per attempt and per arm."""
+    segs = [_seg(0, 29, "approach", "other", "coarse", attempt=1, outcome="failed"),
+            _seg(30, 59, "grasp", "other", "coarse", attempt=1, outcome="failed", failure="missed_grasp"),
+            _seg(60, 89, "approach", "other", "coarse", attempt=2),
+            _seg(90, 119, "grasp", "other", "coarse", attempt=2, mistake=True)]
+    for s in segs:
+        del s["attempt_outcome"]
+    other = episode_rows(arm="other", episode=_episode(), provider="mock", model="m", pipeline_version="v7",
+                         objects=[], facts=[], segments=[_seg(0, 119, "approach", "other", "coarse", attempt=1)],
+                         coarse=[], goal=None, l1={"attempts": []}, checks={"checks": [], "risk": 0.0,
+                                                                            "routed": False},
+                         cost_usd=0.0, source_model="m")
+    write_v7(_rows(segs) + other, tmp_path)
+    frame = read_v11(tmp_path)
+    assert frame["attempt_outcome"].isna().all()  # the file has none
+    subs = subtask_records_v11(frame, "F1/0", arm="L-B")
+    assert [s["attempt_outcome"] for s in subs] == ["failed", "failed", "failed", "failed"]
+    both = subtask_records_v11(frame, "F1/0")  # both arms: derived per arm
+    assert sorted((s["arm"], s["attempt_outcome"]) for s in both) == \
+        [("L-B", "failed")] * 4 + [("other", "success")]
 
 
 def test_fill_attempt_outcome_uses_the_v7_rule_where_missing():

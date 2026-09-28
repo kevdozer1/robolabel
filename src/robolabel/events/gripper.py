@@ -9,6 +9,14 @@ arm starts moving after the close / the opening", and any other low-confidence c
 become ``arm_move`` events at the candidate's onset, which is the frame after the candidate frame (an L1
 candidate frame ends the earlier segment).
 
+With ``include_recovery`` (the default), L1's recovery candidates after a failed close (SPEC_V1_1 6, the
+record's ``recovery_candidates``) become events with the source label ``gripper_recovery``: ``open_start``
+at the re-open, which takes the place of the plain ``open_start`` L1 already gives at that onset (one event
+per type and frame, and the label tells the model that the fingers reopen after a failed close), and
+``back_off`` where the arm then starts moving away (low confidence). Both carry the failed attempt's
+index and sit at the candidate's onset, the frame after the candidate frame. A record without the field
+(an L1 record from before v1.1) gives the events it gave before.
+
 Events keep only onsets in ``[1, num_frames - 1]``: an onset at frame 0 cannot start a new segment.
 
 The record comes from the caller (``l1=``, the output of ``layers.signal.run_l1``), or is computed from
@@ -21,11 +29,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..layers.signal import CODE_VERSION, Calibration, run_l1
+from ..layers.signal import CODE_VERSION, RECOVERY_VERSION, Calibration, run_l1
 from .base import EventSource, make_event, sort_events
 
 ONSET_CONFIDENCE = 0.9  # the same confidence the v7 rows give a signal boundary
 ARM_MOVE_CONFIDENCE = 0.3
+BACK_OFF_CONFIDENCE = 0.3  # a low-confidence heuristic, like arm_move
+RECOVERY_SOURCE = "gripper_recovery"
 
 
 def _attempt_for_close(attempts: list[dict[str, Any]], onset: int) -> int | None:
@@ -46,7 +56,19 @@ def _attempt_for_open(attempts: list[dict[str, Any]], onset: int) -> int | None:
     return None
 
 
-def events_from_l1(record: dict[str, Any], *, include_arm_move: bool = True) -> list[dict[str, Any]]:
+def recovery_events(record: dict[str, Any]) -> list[dict[str, Any]]:
+    """The ``gripper_recovery`` events of an L1 record's ``recovery_candidates`` (empty when absent)."""
+    out = []
+    for c in record.get("recovery_candidates") or []:
+        kind = str(c.get("type"))
+        conf = ONSET_CONFIDENCE if kind == "open_start" else BACK_OFF_CONFIDENCE
+        idx = c.get("attempt_idx")
+        out.append(make_event(kind, int(c["frame"]) + 1, conf, RECOVERY_SOURCE, None if idx is None else int(idx)))
+    return out
+
+
+def events_from_l1(record: dict[str, Any], *, include_arm_move: bool = True,
+                   include_recovery: bool = True) -> list[dict[str, Any]]:
     """Typed events from an L1 record (``layers.signal.run_l1``), sorted by frame."""
     n = int(record.get("num_frames") or 0)
     attempts = list(record.get("attempts") or [])
@@ -71,6 +93,14 @@ def events_from_l1(record: dict[str, Any], *, include_arm_move: bool = True) -> 
         if ev["frame"] < 1 or (n and ev["frame"] > n - 1):
             continue
         keep.setdefault((ev["type"], ev["frame"]), ev)  # one event per type and frame
+    if include_recovery:
+        recovered: set[tuple[str, int]] = set()
+        for ev in recovery_events(record):
+            key = (ev["type"], ev["frame"])
+            if ev["frame"] < 1 or (n and ev["frame"] > n - 1) or key in recovered:
+                continue
+            keep[key] = ev  # the recovery label replaces the plain gripper event at the same onset
+            recovered.add(key)
     return sort_events(list(keep.values()))
 
 
@@ -78,11 +108,13 @@ class GripperSource(EventSource):
     """L1's gripper events. Pass ``l1=`` to :meth:`events`, or build the source with a calibration."""
 
     name = "gripper"
-    version = CODE_VERSION
+    version = f"{CODE_VERSION}+{RECOVERY_VERSION}"
 
-    def __init__(self, calibration: Calibration | None = None, *, include_arm_move: bool = True):
+    def __init__(self, calibration: Calibration | None = None, *, include_arm_move: bool = True,
+                 include_recovery: bool = True):
         self.calibration = calibration
         self.include_arm_move = bool(include_arm_move)
+        self.include_recovery = bool(include_recovery)
 
     def l1_record(self, episode: Any, l1: dict[str, Any] | None = None) -> dict[str, Any]:
         if l1 is not None:
@@ -99,4 +131,5 @@ class GripperSource(EventSource):
 
     def events(self, episode: Any, *, camera: str | None = None,
                l1: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        return events_from_l1(self.l1_record(episode, l1), include_arm_move=self.include_arm_move)
+        return events_from_l1(self.l1_record(episode, l1), include_arm_move=self.include_arm_move,
+                              include_recovery=self.include_recovery)

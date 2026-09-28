@@ -28,6 +28,7 @@ import math
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
+from .failure import attempt_record_for_span, predicted_failed_spans_v11, resolve_convention
 from .lexicon import UNMAPPED, map_phase, normalize_name, words
 from .temporal import as_span, failed_spans_from_segments, match_spans, seg_end, seg_start, span_iou, t3_pairs
 
@@ -561,18 +562,36 @@ def predicted_failure_type(pred_segments: Sequence[Mapping[str, Any]], span: Seq
     return None
 
 
+def _record_failure_type(record: Mapping[str, Any] | None) -> str | None:
+    ftype = _low(record.get("failure_type")) if record is not None else None
+    return None if ftype in (None, "none") else ftype
+
+
 def s4_episode(pred_segments: Sequence[Mapping[str, Any]],
-               gold_failed_attempts: Sequence[Mapping[str, Any]], min_iou: float = S4_MIN_IOU) -> dict[str, Any]:
+               gold_failed_attempts: Sequence[Mapping[str, Any]], min_iou: float = S4_MIN_IOU, *,
+               pred_attempts: Any = None, convention: str = "auto") -> dict[str, Any]:
     """S4 counts for one episode.
 
-    Predicted failed spans merge consecutive segments with ``outcome`` failed or ``mistake`` true
-    (``temporal.failed_spans_from_segments``). They are matched one to one to the gold
-    ``failed_attempts`` spans at IoU >= 0.3, maximizing total IoU (``temporal.match_spans``).
-    Span F1 is ``2M / (m + n)``. Episode level: "has at least one failed attempt", precision over
-    episodes that predict one, recall over episodes whose gold has one. S4-type compares the
-    failure type on matched spans whose gold type is set.
+    Predicted failed spans, by the failure convention of the prediction (``failure.resolve_convention``:
+    ``auto`` reads ``v11`` when a predicted segment carries ``attempt_outcome``, else ``v7``):
+
+    - ``v7`` (outputs older than v1.1, scored as before): merge consecutive segments with ``outcome``
+      failed or ``mistake`` true (``temporal.failed_spans_from_segments``); ``pred_attempts`` is not read.
+    - ``v11`` (SPEC_V1_1 4): the failed attempt records of ``pred_attempts`` (the view's ``attempts``, each
+      the whole attempt), or else consecutive phases with the same ``attempt_idx`` and ``attempt_outcome``
+      failed (derived from the v7 rule where absent).
+
+    They are matched one to one to the gold ``failed_attempts`` spans at IoU >= 0.3, maximizing total
+    IoU (``temporal.match_spans``). Span F1 is ``2M / (m + n)``. Episode level: "has at least one failed
+    attempt", precision over episodes that predict one, recall over episodes whose gold has one.
+    S4-type compares the failure type on matched spans whose gold type is set; a v11 attempt record gives
+    its own ``failure_type``, else the first failed phase inside the span does.
     """
-    pred_spans = failed_spans_from_segments(pred_segments)
+    rule = resolve_convention(pred_segments, convention)
+    if rule == "v7":
+        pred_spans, source = failed_spans_from_segments(pred_segments), "segments"
+    else:
+        pred_spans, source = predicted_failed_spans_v11(pred_segments, pred_attempts)
     gold = [fa for fa in gold_failed_attempts if isinstance(fa, Mapping)]
     gold_spans = [as_span(fa) for fa in gold]
     pairs = match_spans(pred_spans, gold_spans, min_iou)
@@ -580,7 +599,11 @@ def s4_episode(pred_segments: Sequence[Mapping[str, Any]],
     typed: list[dict[str, Any]] = []
     for i, j, iou in pairs:
         g_type = _low(gold[j].get("failure_type"))
-        p_type = predicted_failure_type(pred_segments, pred_spans[i])
+        p_type = None
+        if source == "attempts":
+            p_type = _record_failure_type(attempt_record_for_span(pred_attempts, pred_spans[i]))
+        if p_type is None:
+            p_type = predicted_failure_type(pred_segments, pred_spans[i])
         typed.append({"pred_idx": i, "gold_idx": j, "iou": iou, "pred_type": p_type, "gold_type": g_type})
         if g_type is None:
             continue
@@ -598,4 +621,6 @@ def s4_episode(pred_segments: Sequence[Mapping[str, Any]],
         "pred_spans": [list(s) for s in pred_spans],
         "gold_spans": [None if s is None else list(s) for s in gold_spans],
         "pairs": typed,
+        "convention": rule,
+        "pred_span_source": source,
     }

@@ -3,7 +3,8 @@
 From ``observation.state`` and ``action`` alone it finds gripper closing and opening events, groups
 them into grasp attempts with an outcome (hold, empty, slip, released), reads the robot's end state,
 proposes candidate boundaries with IDs ``c1, c2, ...``, and plans keyframes and video windows for the
-model layers.
+model layers. v1.1 adds, in a field of its own, the recovery candidates after a failed close (the re-open
+and the back-off, SPEC_V1_1 6), and a keyframe plan over every event (Q154).
 
 Two gripper layouts are supported:
 
@@ -469,6 +470,142 @@ def keyframe_plan(attempts: list[dict[str, Any]], n: int, cal: Calibration, max_
     return sorted(out)
 
 
+def keyframe_plan_every_event(l1: dict[str, Any], n: int, cal: Calibration, max_frames: int = 8) -> list[int]:
+    """The keyframe plan of v1.1 (SPEC_V1_1 6, Q154): :func:`keyframe_plan` over every gripper event.
+
+    Every closing and opening run of ``l1["events"]`` counts, not only the onsets of attempts: openings
+    before the first grasp, re-closes and rest closes become keyframes too. The priorities are those of
+    :func:`keyframe_plan`: frame 0 and the last frame (3), each event onset (2), each event offset +
+    0.25 s (1). Frames closer than 0.25 s are merged, keeping the more important one. If more than
+    ``max_frames`` remain, the first and last frames stay, then the onsets of the first and last attempts,
+    then their settled frames (last attempt first), then the rest in time order. An event belongs to the
+    attempt whose close, re-close or first opening starts at its onset; other events (an opening before
+    any close, a rest close) belong to no attempt and fill in time order. Used only by v1.1; the L1
+    record's ``keyframes`` field keeps :func:`keyframe_plan`.
+    """
+    last = n - 1
+    q = cal.frames(0.25)
+    attempts = list(l1.get("attempts") or [])
+    owner_close: dict[int, int] = {}
+    owner_open: dict[int, int] = {}
+    for a in attempts:
+        idx = int(a["attempt_idx"])
+        for onset in [a["closing_onset"]] + [r["onset"] for r in a.get("recloses") or []]:
+            owner_close.setdefault(int(onset), idx)
+        if a.get("opening_onset") is not None:
+            owner_open.setdefault(int(a["opening_onset"]), idx)
+    cands: dict[int, tuple[int, int]] = {}  # frame -> (priority, attempt index; 0 for no attempt)
+
+    def add(frame: int, prio: int, owner: int) -> None:
+        frame = int(min(max(frame, 0), last))
+        old = cands.get(frame)
+        if old is None or prio > old[0]:
+            cands[frame] = (prio, owner)
+
+    add(0, 3, 0)
+    add(last, 3, 0)
+    for ev in l1.get("events") or []:
+        onset = int(ev["onset"])
+        owners = owner_close if ev.get("type") == "closing" else owner_open
+        owner = owners.get(onset, 0)
+        add(onset, 2, owner)
+        add(int(ev["offset"]) + q, 1, owner)
+    kept: list[int] = []
+    for f in sorted(cands):
+        if kept and f - kept[-1] < q:
+            if cands[f][0] > cands[kept[-1]][0] and cands[kept[-1]][0] < 3:
+                kept[-1] = f
+            continue
+        kept.append(f)
+    if len(kept) <= max_frames:
+        return kept
+    first_idx = int(attempts[0]["attempt_idx"]) if attempts else 0
+    last_idx = int(attempts[-1]["attempt_idx"]) if attempts else 0
+    anchors = [f for f in kept if cands[f][0] == 3]
+    onsets = [f for f in kept if cands[f][0] == 2 and cands[f][1] in (first_idx, last_idx)]
+    settled = [f for f in kept if cands[f][0] == 1 and cands[f][1] == last_idx] + \
+        [f for f in kept if cands[f][0] == 1 and cands[f][1] == first_idx and first_idx != last_idx]
+    out = anchors + (onsets + settled)[: max(0, max_frames - len(anchors))]
+    for f in kept:
+        if len(out) >= max_frames:
+            break
+        if f not in out:
+            out.append(f)
+    return sorted(out)
+
+
+# ------------------------------------------------------------------------------------------------ recovery
+RECOVERY_VERSION = "recovery-2026-09-27.1"
+RECOVERY_OUTCOMES = ("empty", "aborted")
+BACK_OFF_WINDOW_S = 0.5  # how long the arm must keep moving away from the grasp pose to count as backing off
+BACK_OFF_MIN_AWAY = 0.5  # share of that window's displacement that must point away from the grasp pose
+BACK_OFF_MIN_DELAY_S = 0.25  # a move that starts sooner after the reopening onset starts with the re-open
+
+
+def back_off_frame(arm: np.ndarray, speed: np.ndarray, ref: np.ndarray, start: int, stop: int,
+                   cal: Calibration) -> int | None:
+    """First frame in ``[start, stop)`` at which the arm starts moving away from ``ref`` after resting.
+
+    The arm must first rest (``min_run`` frames below ``pause_speed``) and then move (``min_run`` frames
+    above it). The move counts as backing off when, over the next ``BACK_OFF_WINDOW_S`` (cut at
+    ``stop - 1``), the distance to ``ref`` grows by at least ``BACK_OFF_MIN_AWAY`` of the distance
+    travelled. An arm that never rests, never moves again, or moves back toward ``ref`` gives None.
+    """
+    k = max(2, cal.min_run())
+    stop = min(int(stop), len(speed), len(arm))
+    rest = _first_sustained_below(speed, int(start), stop, cal.pause_speed, k)
+    if rest is None:
+        return None
+    mv = _first_moving(speed, rest, stop, cal.pause_speed, k)
+    if mv is None:
+        return None
+    end = min(mv + cal.frames(BACK_OFF_WINDOW_S), stop - 1)
+    if end <= mv:
+        return None
+    ref = np.asarray(ref, dtype=np.float64)
+    travelled = float(np.linalg.norm(arm[end] - arm[mv]))
+    away = float(np.linalg.norm(arm[end] - ref)) - float(np.linalg.norm(arm[mv] - ref))
+    if travelled <= 0.0 or away < BACK_OFF_MIN_AWAY * travelled:
+        return None
+    return int(mv)
+
+
+def recovery_candidates(attempts: list[dict[str, Any]], events: list[dict[str, Any]], sig: dict[str, np.ndarray],
+                        speed: np.ndarray, cal: Calibration) -> list[dict[str, Any]]:
+    """Candidates after a failed close (SPEC_V1_1 6): the re-open and the back-off.
+
+    For every attempt whose outcome is ``empty`` or ``aborted`` and whose fingers open again:
+
+    * ``open_start`` (high confidence) at the reopening onset minus 1: the failed grasp ends there;
+    * ``back_off`` (low confidence) where the arm starts moving away after that re-open, one frame before
+      the first moving frame of :func:`back_off_frame`, searched from the reopening onset up to the next
+      closing onset (or the episode end), away from the arm's pose when the fingers had closed. A move
+      that starts less than 0.25 s after the reopening onset starts with the re-open itself, so the
+      ``open_start`` candidate already marks it and no ``back_off`` is added.
+
+    Frames follow the L1 candidate convention (a candidate frame ends the earlier segment), so the
+    onsets are ``frame + 1``. Each candidate is ``{"type", "frame", "confidence", "attempt_idx"}`` with
+    the failed attempt's index; frames outside ``[0, n - 1)`` are dropped, as in :func:`candidates`.
+    """
+    n = len(speed)
+    closings = sorted(int(e["onset"]) for e in events if e["type"] == "closing")
+    out: list[dict[str, Any]] = []
+    for a in attempts:
+        if a["outcome"] not in RECOVERY_OUTCOMES or a.get("opening_onset") is None:
+            continue
+        idx = int(a["attempt_idx"])
+        on = int(a["opening_onset"])
+        out.append({"type": "open_start", "frame": on - 1, "confidence": "high", "attempt_idx": idx})
+        stop = next((c for c in closings if c > on), n)
+        ref = sig["arm"][min(int(a["closing_offset"]), on, n - 1)]
+        mv = back_off_frame(sig["arm"], speed, ref, on, stop, cal)
+        if mv is not None and mv - on >= cal.frames(BACK_OFF_MIN_DELAY_S):
+            out.append({"type": "back_off", "frame": mv - 1, "confidence": "low", "attempt_idx": idx})
+    out = [c for c in out if 0 <= c["frame"] < n - 1]
+    out.sort(key=lambda c: (c["frame"], c["type"]))
+    return out
+
+
 def video_windows(events: list[dict[str, Any]], n: int, fps: float) -> list[list[int]]:
     w = max(1, int(round(fps)))
     return [[max(0, e["onset"] - w), min(n - 1, e["onset"] + w)] for e in events]
@@ -499,6 +636,10 @@ def run_l1(state: np.ndarray, action: np.ndarray, cal: Calibration, *, episode_k
         "candidates": cands,
         "keyframes": keyframe_plan(attempts, n, cal),
         "windows": video_windows(events, n, cal.fps),
+        # v1.1 (SPEC_V1_1 6), additive: the fields above do not change (nor does code_version); the rule that
+        # made recovery_candidates is named by recovery_version
+        "recovery_candidates": recovery_candidates(attempts, events, sig, speed, cal),
+        "recovery_version": RECOVERY_VERSION,
     }
 
 

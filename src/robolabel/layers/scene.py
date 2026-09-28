@@ -190,6 +190,117 @@ def parse_facts(data: Any, manifest: list[dict[str, Any]], episode: Any, objects
     return [out[k] for k in sorted(out, key=lambda fc: (fc[0], fc[1]))]
 
 
+# ------------------------------------------------------------------------------------------------ v1.1 (additive)
+# SPEC_V1_1 3.4: the scene calls of the full v1.1 pipeline work from one camera of the video alone. The
+# inventory sees up to 8 evenly spaced frames (first and last included) before the coarse pass; the facts see
+# keyframes from the refined boundaries (frame 0, each boundary, the last frame; at most 8) after the crawl.
+# The prompts are v8 (``prompts/v8/scene_inventory.txt`` and ``scene_facts.txt``, no robot measurement
+# lines); the JSON schemas and the parsers are the v7 ones above, unchanged.
+
+SCENE_FRAMES_V11 = 8
+_TYPED_BOUNDARIES = ("close_start", "open_start", "contact_start", "contact_end")
+
+
+def inventory_frames_v11(num_frames: int, max_frames: int = SCENE_FRAMES_V11) -> list[int]:
+    """Up to ``max_frames`` evenly spaced frames of the clip, the first and the last included."""
+    from .frames import even_frames
+
+    return even_frames(int(num_frames), max(1, int(max_frames)))
+
+
+def _pick_even(values: list[int], k: int) -> list[int]:
+    """``k`` of ``values`` at evenly spaced positions (all of them when they fit), first and last kept."""
+    if k <= 0:
+        return []
+    if len(values) <= k:
+        return list(values)
+    if k == 1:
+        return [values[(len(values) - 1) // 2]]
+    span = len(values) - 1
+    return [values[(2 * i * span + (k - 1)) // (2 * (k - 1))] for i in range(k)]
+
+
+def facts_keyframes_v11(segments: list[dict[str, Any]], num_frames: int,
+                        max_frames: int = SCENE_FRAMES_V11) -> list[int]:
+    """Keyframes for the v1.1 facts call: frame 0, each boundary (the onset frame, the first frame of the
+    segment after it), and the last frame; at most ``max_frames``.
+
+    When the boundaries do not fit, the typed ones (``end_event`` close_start, open_start, contact_start,
+    contact_end) come first, then the others; within each group the boundaries are taken at evenly spaced
+    positions in time order. Deterministic (integer arithmetic only)."""
+    last = max(0, int(num_frames) - 1)
+    anchors = sorted({0, last})
+    budget = max(0, int(max_frames) - len(anchors))
+    typed, other = [], []
+    seen: set[int] = set(anchors)
+    for before, after in zip(segments, segments[1:], strict=False):
+        f = int(after["start_frame"])
+        if f in seen or not 0 < f < last:
+            continue
+        seen.add(f)
+        (typed if before.get("end_event") in _TYPED_BOUNDARIES else other).append(f)
+    chosen = _pick_even(sorted(typed), budget)
+    chosen += _pick_even(sorted(other), budget - len(chosen))
+    return sorted(set(anchors) | set(chosen))
+
+
+def _v8_text(name: str, values: dict[str, Any], task: str | None, extra_sections: tuple[str, ...] = ()) -> str:
+    from ..prompts.v8 import prompt_sections
+
+    sec = prompt_sections(name)
+    task_text = (task or "").strip()
+    blocks = [sec["input"].format(**values),
+              sec["task"].format(task=task_text) if task_text else sec["no_task"]]
+    blocks += [sec[s].format(**values) for s in extra_sections]
+    blocks.append(sec["rules"].format(**values))
+    return "\n\n".join(blocks)
+
+
+def _v8_system() -> str:
+    from ..prompts.v8 import load_prompt as load_prompt_v8
+
+    return load_prompt_v8("system").strip()
+
+
+def inventory_request_v11(episode: Any, *, camera: str, context: dict[str, Any], reasoning: dict[str, Any] | None,
+                          max_frames: int = SCENE_FRAMES_V11) -> tuple[CallRequest, list[dict[str, Any]]]:
+    """(request, manifest) for the v1.1 inventory: one camera, up to 8 evenly spaced frames incl. first and
+    last, the v8 prompt, the v7 ``scene_inventory`` schema (parse the answer with :func:`parse_inventory`)."""
+    frames = inventory_frames_v11(episode.num_frames, max_frames)
+    parts, manifest = image_parts(episode, [(f, camera) for f in frames])
+    text = _v8_text("scene_inventory", {"n_images": len(frames), "camera": camera_label(camera),
+                                        "first_frame": frames[0]}, episode.task)
+    req = CallRequest(step="scene_inventory", system=_v8_system(), parts=[_t(text), *parts],
+                      schema=SCHEMAS["scene_inventory"], schema_name="scene_inventory_v7",
+                      max_tokens=MAX_TOKENS["scene_inventory"], reasoning=reasoning,
+                      context={**context, "frame_indices": list(frames), "cameras": [camera]})
+    return req, manifest
+
+
+def facts_request_v11(episode: Any, *, camera: str, keyframes: list[int], objects: list[dict[str, Any]],
+                      context: dict[str, Any], reasoning: dict[str, Any] | None
+                      ) -> tuple[CallRequest, list[dict[str, Any]]]:
+    """(request, manifest) for the v1.1 facts: one camera at the given keyframes (sorted, at most 8 in the
+    pipeline), the v8 prompt, the v7 ``scene_facts`` schema (parse the answer with :func:`parse_facts`)."""
+    last = int(episode.num_frames) - 1
+    frames = sorted({min(max(int(f), 0), last) for f in keyframes})
+    parts, manifest = image_parts(episode, [(f, camera) for f in frames])
+    tids = task_object_ids(objects, episode.task)
+    if tids:
+        task_objects = ", ".join(tids)
+    elif (episode.task or "").strip():
+        task_objects = "the objects the task names"
+    else:
+        task_objects = "the objects that are handled in the clip"
+    values = {"n_images": len(frames), "camera": camera_label(camera), "inventory_lines": inventory_lines(objects),
+              "task_objects": task_objects, "last_frame": last}
+    text = _v8_text("scene_facts", values, episode.task, ("objects",))
+    req = CallRequest(step="scene_facts", system=_v8_system(), parts=[_t(text), *parts],
+                      schema=SCHEMAS["scene_facts"], schema_name="scene_facts_v7", max_tokens=MAX_TOKENS["scene_facts"],
+                      reasoning=reasoning, context={**context, "frame_indices": frames, "cameras": [camera]})
+    return req, manifest
+
+
 def fact_lines(facts: list[dict[str, Any]], frame: int, objects: list[dict[str, Any]]) -> str:
     """Plain lines for the goal call (never JSON inside a string)."""
     names = {o["object_id"]: o["name"] for o in objects}

@@ -167,14 +167,18 @@ def _temporal_counts(pred: Sequence[Mapping[str, Any]], gold: Sequence[Mapping[s
 
 
 def score_view(view: Mapping[str, Any], gold_episode: Mapping[str, Any], judge_answers: Any = None,
-               gold_objects_resolution_judge: Any = None, *, allow_heldout: bool = False) -> dict[str, Any]:
+               gold_objects_resolution_judge: Any = None, *, allow_heldout: bool = False,
+               failure_convention: str = "auto") -> dict[str, Any]:
     """Score one view record against one gold v2 episode.
 
     ``judge_answers`` (or ``gold_objects_resolution_judge``, the same thing under the name the
     import tool uses) maps judge IDs (``object|<episode_key>|<name>``, ``g2|<episode_key>|<text>``)
     to answers, or is a list of ``{"judge_id", "answer"}`` records; names alone are accepted for a
     mapping made for this episode. A gold episode with ``split: heldout`` is refused unless
-    ``allow_heldout`` (the caller has passed the held-out guard).
+    ``allow_heldout`` (the caller has passed the held-out guard). ``failure_convention`` picks the rule
+    of S4 and G2 part (i) (SPEC_V1_1 4, ``robolabel.eval.failure``): ``auto`` (the default) reads ``v11``
+    when a predicted segment carries ``attempt_outcome`` and ``v7`` otherwise, so older views score as
+    before; ``v7`` or ``v11`` force one. Under ``v11`` S4 reads the view's ``attempts`` records.
 
     Returns ``{"schema", "arm", "episode_key", "family", "hard_tags", "no_output",
     "missing_output_reason", "goal_missing", "counts", "values", "pending", "details",
@@ -197,6 +201,7 @@ def score_view(view: Mapping[str, Any], gold_episode: Mapping[str, Any], judge_a
     coarse = [] if no_output else [c for c in (view.get("coarse") or []) if isinstance(c, Mapping)]
     pred_outcome = None if no_output else view.get("episode_outcome")
     view_objects = [] if no_output else (view.get("objects") or [])
+    pred_attempts = None if no_output else view.get("attempts")
 
     gold_objects = [o for o in gold_episode.get("objects") or [] if isinstance(o, Mapping)]
     gold_ids = [str(o["object_id"]) for o in gold_objects if o.get("object_id")]
@@ -225,17 +230,17 @@ def score_view(view: Mapping[str, Any], gold_episode: Mapping[str, Any], judge_a
     s2d = s2_episode(pred_segments, gold_segments, resolver, gold_ids, destination=True)
     out["S2"], out["S2-dest"] = s2["counts"], s2d["counts"]
     details["S2"], details["S2-dest"] = s2["items"], s2d["items"]
-    s4 = s4_episode(pred_segments, gold_failed)
+    s4 = s4_episode(pred_segments, gold_failed, pred_attempts=pred_attempts, convention=failure_convention)
     for key in ("S4-P", "S4-R", "S4-F1", "S4-ep-P", "S4-ep-R", "S4-type"):
         out[key] = s4[key]
-    details["S4"] = {k: s4[k] for k in ("pred_spans", "gold_spans", "pairs")}
+    details["S4"] = {k: s4[k] for k in ("pred_spans", "gold_spans", "pairs", "convention", "pred_span_source")}
 
     goal = goal_episode(view_goal, gold_episode, resolver)
     scores = goal["scores"]
     out.update(scores["counts"])
     out["G3"] = goal["g3"]["counts"]
     g2 = g2_episode(pred_segments, coarse, gold_failed, goal["raw_requirements"], episode_key=episode_key,
-                    judge_answers=answers)
+                    judge_answers=answers, convention=failure_convention)
     out.update(g2["counts"])
     g6 = g6_episode({"G1_all_ending_stated": scores["g1_ok"], "G2_not_copied": g2["ok"],
                      "G3_target_right": goal["g3"]["ok"], "G4_none_incidental_or_hallucinated": scores["g4_ok"]})
@@ -251,7 +256,7 @@ def score_view(view: Mapping[str, Any], gold_episode: Mapping[str, Any], judge_a
         "gold_unsure_dropped": scores["gold_unsure_dropped"],
         "g5_confusion": scores["g5_confusion"],
         "g5_pred_unsure_without_kind": scores["g5_pred_unsure_without_kind"],
-        "G2": {"applicable": g2["applicable"], "part_i_hits": g2["part_i_hits"]},
+        "G2": {"applicable": g2["applicable"], "part_i_hits": g2["part_i_hits"], "convention": g2["convention"]},
         "G3": {"reason": goal["g3"]["reason"], "resolution": goal["g3"]["resolution"]},
         "G6": g6["conditions"],
         "pred_outcome": pred_outcome,
