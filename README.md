@@ -199,7 +199,7 @@ V-lite uses three new optional extras; the pipeline above needs none of them:
 | extra | installs | used for |
 |---|---|---|
 | `eval` | `scipy`, `jsonschema` | the measurement harness in `robolabel.eval` (segment matching, gold v2 validation). The OpenRouter provider also checks every answer against its JSON Schema with `jsonschema`, and skips that check when it is not installed |
-| `video` | `av` (PyAV) | `robolabel.adapters.lerobot_v3`, which reads a LeRobot v3.0 folder directly (every camera plus `observation.state` and `action`) without a `lerobot` install |
+| `video` | `av` (PyAV) | `robolabel.adapters.lerobot_v3`, which reads a LeRobot v3.0 folder directly (every camera plus `observation.state` and `action`) without a `lerobot` install, and `robolabel.adapters.clip_folder` (v1.1), which reads a folder of short clips |
 | `hub` | `huggingface_hub` | fetching a dataset at a pinned revision, for example with `huggingface_hub.snapshot_download(repo_id, repo_type="dataset", revision=..., local_dir=...)`; robolabel does not import it |
 
 ```bash
@@ -320,15 +320,17 @@ the pipeline itself:
 
 - Segment ends move onto the L1 candidates the model confirms, so in the sweep the boundary positions
   came mostly from the signal layer, not from the model.
-- L1 proposes candidates only at each closing onset, where the arm starts moving after a close that
+- L1 proposed candidates only at each closing onset, where the arm starts moving after a close that
   held, at the opening onset of a release, and where the arm starts moving after it. After a missed
-  grasp it proposes none for the re-opening, the backing off or the re-approach, and in the sweep most
-  segmentation errors fell in those stretches.
+  grasp it proposed none for the re-opening, the backing off or the re-approach, and in the sweep most
+  segmentation errors fell in those stretches. v1.1 adds the re-open and the back-off as recovery
+  candidates, in a field of their own (see [Failure convention](#failure-convention)).
 
 ### PyAV and codecs
 
-robolabel uses PyAV (the `video` extra) only to decode video, in `robolabel.adapters.lerobot_v3`; it
-encodes no video and does not bundle or redistribute PyAV or FFmpeg. PyAV itself is BSD-3-Clause,
+robolabel uses PyAV (the `video` extra) only to decode video, in `robolabel.adapters.lerobot_v3` and
+`robolabel.adapters.clip_folder`; it encodes no video and does not bundle or redistribute PyAV or
+FFmpeg. PyAV itself is BSD-3-Clause,
 but its PyPI wheels bundle an FFmpeg build that includes GPL codecs (libx264, libx265). For an
 LGPL-only setup, install an FFmpeg with no GPL components (built without `--enable-gpl` and without
 libx264, libx265 or other GPL libraries, with its development headers), then build PyAV from source
@@ -340,6 +342,211 @@ pip install av --no-binary av
 
 LeRobot v3.0 datasets often store AV1 video, so that FFmpeg needs an AV1 decoder such as libdav1d
 (BSD-licensed).
+
+## Experimental: video first (v1.1)
+
+v1.1 is a second opt-in redesign next to V-lite, built on one principle: **the video alone must be
+good; signals make it better.** Every step works from the video of one camera, so it also runs on
+robot data without gripper channels, on humanoids and people, and on tasks that are not pick and
+place. A robot signal is an optional *event source*: when there is one it is used for timing,
+attempts and robot end states, and when there is none nothing breaks. "v1.1" names this pipeline
+design (its rows carry `pipeline_version` `v1.1 ...`), not a package release.
+
+Nothing above changes: `robolabel run`, `annotate` and `demo` still write schema v6, V-lite's
+`run_episode` still writes the same v7 rows (the written v7 file is identical; the `pipeline_code` in
+its view and row dicts changes, since it hashes `layers/*.py` and `schema_v7.py`, which v1.1 extends),
+and v1 to v7 files still read. Like V-lite, v1.1 has no CLI subcommand; you call it from Python and
+its API may change (options in [`CONFIG.md`](CONFIG.md#v11-video-first-experimental)). Its prompts are
+version v8; the response cache is keyed by the prompt text, so a v8 step is never answered from a
+cached V-lite (v7) call.
+
+`robolabel.vfirst.run_episode_v11` labels one episode from one camera, in this order:
+
+| step | what it does | model calls |
+|---|---|---|
+| event source | typed candidate events from `none`, `motion` or `gripper` (below) | none |
+| L2 inventory | object IDs and names from up to 8 evenly spaced frames, first and last included | 1 |
+| coarse pass | every segment of the clip, from frames or from native video | 1 |
+| crawl | each typed boundary refined to its onset frame | at most 3 per boundary, 12 boundaries |
+| L2 facts | scene facts at frame 0, each boundary and the last frame (at most 8; with the gripper source, L1's keyframe plan over every event); skipped when the inventory is empty | 1 |
+| L4 goal | the goal as end-state requirements, plus `has_end_state` and `goal_command` | 1 |
+| L5 checks | the ten V-lite rules and three video-only rules | none |
+
+It returns a view record and v7 rows with the v1.1 fields, which `robolabel.schema_v7.write_v11` writes
+(see [`SCHEMA.md`](SCHEMA.md#v11-additions-video-first-experimental)). A call that fails, is refused
+or is still invalid after its repair retry does not end the episode: the gap is listed in `repairs`,
+and the episode gets risk 1.0 and is routed for review with the reason. `robolabel.vfirst.run_timing`
+runs only the event source, the coarse pass and the crawl, for timing experiments.
+
+### Event sources
+
+A source (`robolabel.events.get_source(name)`) returns events
+`{type, frame, confidence, source, attempt_idx}` in time order. The coarse pass sees them as plain
+lines such as `c1: frame 152 (5.07 s), pause_start (motion)`, which the prompt calls hints, not
+boundaries to copy.
+
+| source | reads | events |
+|---|---|---|
+| `none` (default) | nothing | none: the video alone |
+| `motion` | the camera's pixels | `pause_start` and `pause_end` around runs of at least 0.3 s whose frame-to-frame difference (grayscale, long side 128 px, 3-frame smoothing) is at or below the clip's 20th percentile. Free and deterministic |
+| `gripper` | the L1 record (`l1=`, from `observation.state` and `action`) | L1's `close_start` and `open_start` onsets, `arm_move` (low confidence), and after a failed close the re-open and the back-off (source `gripper_recovery`) |
+
+Choosing one:
+
+- `gripper` when the robot records its gripper in a layout L1 knows (`so101`, `libero`). A
+  `close_start` or `open_start` boundary that the coarse pass ties to a gripper event takes the L1
+  frame (`boundary_source: signal`) and is not crawled, a robot end-state item the model left
+  `required` with `achieved` unknown, or marked `unsure` / `perception`, takes L1's answer when L1 can
+  give one (`basis: signal`), and the five L5 rules that need a signal run.
+- `none` for any other video, and whenever the gripper signal is the truth you score against: that
+  signal must stay hidden, so `run_episode_v11` raises ValueError when `l1=` is passed with any other
+  source (`run_timing` ignores it there).
+- `motion` adds free pause hints to any video; how much they help is not established yet.
+
+### Coarse pass
+
+One call (`robolabel.layers.coarse`) proposes all the segments of the clip. It sees frames at 2 per
+second, first and last included, at most 48 (a clip longer than about 24 s gets 48 evenly spaced
+frames), long side at most 448 px, each after a caption such as
+`frame 160 of 303 (5.33 s), camera up`; or the clip as native video (below). Per segment it returns:
+
+- `phase_text`, the phase in open text (always), and `phase_class`, a class from the V-lite list or
+  `other`: the prompt says the list is a vocabulary, not a template;
+- `end_event`, the type of the boundary at the segment's end: `close_start`, `open_start`,
+  `contact_start`, `contact_end` or `other` (always `other` on the last segment). A grasp boundary is
+  `close_start` and a let-go `open_start`; the contact types are for touches in which the fingers
+  neither close nor open (a pressed control, a held tool on a surface, a push or a wipe);
+- the target and destination (inventory IDs, or plain words when there is no inventory), the attempt
+  index, the outcome and attempt outcome (below), and the candidate the boundary sits on, if any.
+
+Post-processing is deterministic and records every repair: the segments are made contiguous over the
+clip, times become frames, gripper-tied boundaries take their L1 frame, and the failure convention is
+applied.
+
+### The crawl
+
+The crawl (`robolabel.layers.crawl`) refines every boundary typed `close_start`, `open_start`,
+`contact_start` or `contact_end`, by rule: never only because the model said it was unsure. Each call
+shows up to 8 images of the camera and asks one narrow question, such as "Which of these frames is
+the first where the fingers (gripper or hand) have started to close?" (for a contact: "... where the
+hand or the tool touches the <object>"):
+
+1. **Stage 1**: 8 frames evenly spaced over ±1.0 s around the proposed onset.
+2. **Stage 2**: up to 8 frames from the stage-1 frame before the pick to the pick, at native spacing
+   when they fit, else at the finest spacing that does.
+
+The answer is one integer: 2 to 8 for the first image that shows the event, 0 when image 1 already
+does, 9 when it has not begun by image 8, -1 when it cannot be judged. A 0 or a 9 in stage 1 shifts the
+window by its own width and asks once more. The result is the onset frame: the next segment starts
+there and the one before ends one frame earlier (`boundary_source: crawl`; `coarse_end_frame` keeps the
+proposal). A boundary the crawl cannot decide keeps its coarse frame. Caps: at most 3 calls per
+boundary and 12 crawled boundaries per episode, in time order. The view's crawl log records, per
+boundary, the frames shown, each answer, the cost and flags such as `crawl_edge`, `crawl_none`,
+`crawl_inconsistent`, `crawl_cross` or `skipped_cap` (each flag is explained in
+[`SCHEMA.md`](SCHEMA.md#crawl-log-flags-v11)). The crawl uses the coarse model unless you pass
+`crawl_caller=`; `crawl=False` turns it off.
+
+### Native video input
+
+With `coarse_mode="video"` and `video=` a `VideoPart` (mp4 bytes), the coarse pass sends the whole clip
+as one video instead of frames. The model then gives times in seconds, in steps of 0.1 s, which become
+frames as `round(t * fps)`. Only the coarse pass uses the video; the inventory, the crawl, the facts and
+the goal still see frames.
+
+- robolabel never encodes video. `ClipFolderSource.video_part(clip_id)` returns the clip file's own
+  bytes when it is an H.264 mp4 of at most 60 s, and None otherwise; then encode the clip yourself and
+  build `VideoPart(data=mp4_bytes, mime="video/mp4", seconds=duration_s)`. Set `seconds` to the clip's
+  duration: the spend guard's worst-case reservation counts one image's tokens per second of video
+  (at least one), and `seconds` defaults to 0.
+- The OpenRouter provider sends it as a `video_url` part, so the model must accept video input on
+  OpenRouter (see the model's input modalities). The model's provider samples the video itself, at a
+  rate robolabel neither sets nor records; keep that in mind when comparing video with frames.
+
+Like V-lite, v1.1 calls models through `.call(CallRequest)`, which the `openrouter` and `mock`
+providers implement; the `gemini`, `openai` and `qwen` providers do not yet.
+
+### Failure convention
+
+- A phase's `outcome` is its own result. In a missed grasp the approach that reached the object is
+  `success` and the grasp is `failed` with `failure_type: missed_grasp`; `mistake` (pi0.7's
+  per-segment flag) is true only on that grasp.
+- `attempt_outcome` (`success`, `failed` or `aborted`) is the result of the whole attempt, copied onto
+  each of its phases, so a consumer can still drop whole failed attempts. The attempt record keeps the
+  whole span, from the attempt's first phase to its last, and its `evident_frame`.
+- Recovery after a failed grasp: the grasp ends when the fingers start to reopen (`open_start`), then
+  comes `retract` if the arm backs off, then the `approach` of the next attempt (`attempt_idx` one
+  higher). L1 now marks the re-open (high confidence) and the back-off, where the arm starts moving
+  away (low confidence), as candidates in a field of their own, `recovery_candidates`. The gripper
+  source passes them to the coarse pass; V-lite does not use them.
+- Older outputs have no `attempt_outcome`. Readers derive it by the old rule
+  (`robolabel.eval.derive_attempt_outcome`), and the scorer picks the rule per view, so older views
+  score as before.
+
+### Goals: states, plus a command
+
+- `goal_objective` is kept a state ("the pink brick is inside the transparent box"). An objective that
+  the state check reads as a command (it starts with a known imperative verb, a fixed list in
+  `robolabel.layers.goal.is_state_objective`) is replaced by a state sentence rendered from the
+  requirements.
+- `goal_command` is rendered deterministically from the required object end states, in their order,
+  joined with "then": `inside` gives "Put <object> in <ref>", `on_top_of` "Put <object> on <ref>",
+  `activated` "Press <object>" for a control or "Turn on <object>" otherwise, and `state` "Set <object>
+  to <value>". Robot items never appear, and it is empty when nothing renders. This is the text for
+  training prompts: the pink brick required inside the transparent box, plus an open gripper, gives
+  "Put the pink brick in the transparent box". `robolabel.layers.goal.goal_command` renders a few
+  more verbs (such as "Take ... out of" or "Pick up") only with `extra_forms=True`, which the pipeline
+  does not pass.
+- `has_end_state` (from the goal call) is false for an activity with no object end state, such as a
+  dance, a wave or a gesture; then no `object_end_state` item may appear (L5 rule 13).
+
+### Example (offline, v1.1)
+
+This runs with no key, no network and no dataset: a synthetic clip with no robot signal, the `motion`
+source and the mock provider, whose answers are valid against the schemas but describe nothing (it
+gives one segment, so nothing is crawled).
+
+```python
+import numpy as np
+
+from robolabel.episode import Episode
+from robolabel.providers.mock import MockProvider
+from robolabel.schema_v7 import write_v11
+from robolabel.vfirst import run_episode_v11
+
+# A synthetic clip: 90 frames at 30 fps from one camera, and no robot signal.
+n = 90
+rng = np.random.default_rng(0)
+video = rng.integers(0, 255, size=(n, 60, 80, 3), dtype=np.uint8)
+ep = Episode(episode_id="C/demo", num_frames=n, fps=30.0, task="put the brick in the box",
+             get_frame=lambda i: video[int(i)], camera_key="cam")
+
+# Inventory, coarse pass (frames at 2 per second), crawl, scene facts and goal; then the checks.
+provider = MockProvider()  # offline, $0, placeholder answers that describe nothing
+out = run_episode_v11(ep, camera="cam", caller=provider, event_source="motion",
+                      context={"arm": "v11@mock", "episode_key": ep.episode_id})
+
+view = out["view"]
+print([(s["start"], s["end"], s["phase_class"], s["end_event"], s["boundary_source"]) for s in view["segments"]])
+print(view["event_sources"], view["coarse_mode"], view["coarse_fps"], view["crawl_calls"], view["step_status"])
+print(view["has_end_state"], repr(view["goal_command"]), view["risk"], view["routed"])
+print(write_v11(out["rows"], "v11_out"))  # v11_out/annotations.parquet: the v7 layout plus the v1.1 columns
+```
+
+With a real model, build an `OpenRouterProvider` as in
+[the V-lite section](#a-real-model-openrouter-the-spend-guard-and-the-cache) and pass it as `caller=`
+(the spend-guard bucket is `context["bucket"]`, `sweep` by default). With a robot signal, pass
+`event_source="gripper", l1=l1`, with `l1` from `run_l1` as in the V-lite example. For native video,
+a folder of short clips (the `video` extra) gives the episode and the video part:
+
+```python
+from robolabel.adapters.clip_folder import ClipFolderSource
+
+clips = ClipFolderSource("path/to/clips")  # <root>/<clip id>/clip.mp4, and optionally task.txt
+ep = clips.episode("my_clip")              # key C/my_clip, one camera named "video"
+out = run_episode_v11(ep, camera="video", caller=provider, coarse_mode="video",
+                      video=clips.video_part("my_clip"),  # None unless an H.264 mp4 of at most 60 s
+                      context={"arm": "v11@my-model", "episode_key": ep.episode_id})
+```
 
 ## Status
 

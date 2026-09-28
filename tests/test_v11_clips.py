@@ -140,9 +140,9 @@ def lines(log):
 
 def test_clip_keys_on_the_allowlist_are_dev(seal):
     ids, prereg, log = seal
-    guard = HeldoutGuard(ids, log, prereg, clip_keys=["C/no_end_state", " C/draw_statebench "])
-    assert guard.clip_keys == {"C/no_end_state", "C/draw_statebench"}
-    guard.check(["C/no_end_state", "F1/0", "F3/1821", "C/draw_statebench"], command="e2")
+    guard = HeldoutGuard(ids, log, prereg, clip_keys=["C/no_end_state", " C/draw "])
+    assert guard.clip_keys == {"C/no_end_state", "C/draw"}
+    guard.check(["C/no_end_state", "F1/0", "F3/1821", "C/draw"], command="e2")
     assert not log.exists()
     assert guard.heldout_in(["C/no_end_state", "F1/2"]) == ["F1/2"]
     assert guard.clips_refused(["C/no_end_state", "C/other", "F1/0"]) == ["C/other"]

@@ -11,7 +11,8 @@ Schema version: **`robolabel/annotations/v6`** (stored in every row's
 `schema_version` column; bump it on any breaking change). Long format: one row
 per record, three record types per episode. The experimental V-lite pipeline writes
 **`robolabel/annotations/v7`** instead, with more record types; see
-[v7 (V-lite output)](#v7-v-lite-output-experimental) below.
+[v7 (V-lite output)](#v7-v-lite-output-experimental) below. The experimental v1.1 pipeline writes v7
+with a few more optional columns; see [v1.1 additions](#v11-additions-video-first-experimental).
 
 **v2** adds three columns for the annotation-strategy layer: `phase` and
 `boundary_evidence` (per subtask) and `strategy` (per episode). **v3** adds one
@@ -120,9 +121,11 @@ counts.
 
 ## v7 (V-lite output, experimental)
 
-Schema version: **`robolabel/annotations/v7`**. Only the experimental V-lite pipeline
-writes it (`robolabel.schema_v7.write_v7` on the rows that `robolabel.vlite.run_episode`
-returns; see the README). `robolabel run`, `annotate` and `demo` still write v6.
+Schema version: **`robolabel/annotations/v7`**. Only the experimental pipelines write it:
+V-lite (`robolabel.schema_v7.write_v7` on the rows that `robolabel.vlite.run_episode`
+returns; see the README), and v1.1 with the additions described
+[below](#v11-additions-video-first-experimental). `robolabel run`, `annotate` and `demo` still
+write v6.
 
 v7 is additive. It is the same long-format `annotations.parquet` with every v6 column,
 65 new columns and five new record types: `coarse_subtask`, `attempt`, `scene_fact`,
@@ -251,6 +254,164 @@ does not write to disk itself. Its keys: `arm`, `episode_key`, `family`, `fps`,
 `candidate_verdicts` and `step_status`. Objects in the view are named, not only numbered.
 The `episode_metadata` row dict that `run_episode` returns also has `pipeline_code`, but it is
 not a v7 column, so `write_v7` leaves it out of the parquet.
+
+## v1.1 additions (video first, experimental)
+
+The experimental v1.1 pipeline (`robolabel.vfirst.run_episode_v11`; see the README) returns v7
+rows with 11 more columns, and `robolabel.schema_v7.write_v11` writes them. `write_v7` and the
+V-lite output are unchanged.
+
+v1.1 is additive to v7. It adds no record type and keeps `schema_version`
+**`robolabel/annotations/v7`**: every new column is optional, and a reader that does not know
+them sees a v7 file. **v1 to v7 files still read**: `robolabel.schema_v7.read_v11` reads any
+version and adds every v1.1 column (null where the file has none), `episode_record_v11` and
+`subtask_records_v11` return typed rows, and `subtask_records_v11` derives `attempt_outcome` for
+a file that has none (the old rule, below; `derive=False` leaves it null, as in the file).
+`event_sources` is stored as comma-joined text and
+read back as a list; `has_end_state` and `crawl_enabled` are nullable booleans.
+
+v1.1 rows carry `strategy` `v1.1` and `pipeline_version` `v1.1` plus the prompt version (for
+example `v1.1 v8-2026-09-27.1`). `layer_models_json` gains `crawl` (the crawl model, or `none`),
+and its `L1` is `signal` with the gripper event source, else `none`.
+
+### `subtask` (v1.1)
+
+| column | type | meaning |
+|---|---|---|
+| `end_event` | str? | the type of the boundary at the segment's end: `close_start`, `open_start`, `contact_start`, `contact_end` or `other` (always `other` on the last segment) |
+| `coarse_end_frame` | int? | the end frame the coarse pass proposed, before the crawl or a snap to the signal moved it |
+| `crawl_calls` | int? | crawl calls made for the boundary at the segment's end (0 when it was not crawled) |
+| `attempt_outcome` | str? | `success`, `failed` or `aborted`: the result of the whole attempt the phase belongs to, the same on each of its phases |
+| `event_sources` | str? | the run's event sources, comma-joined: `none`, `motion` or `gripper` |
+
+What v7 columns mean in v1.1 rows:
+
+- `boundary_source` gains two values: `coarse` (the end the coarse pass proposed) and `crawl`
+  (the onset the crawl found). `signal` is a `close_start` or `open_start` boundary that took the
+  frame of an L1 event. `boundary_confidence` is 0.9 for `signal` and 0.5 otherwise.
+- `outcome` is the phase's own result: in a missed grasp the approach is `success` and the grasp
+  `failed`. At most one phase per attempt is `failed`, `failure_type` is `none` on every
+  successful phase, and `mistake` is true only on the failed phase.
+- `subtask_text` holds `phase_text`, the phase in the model's own words; `phase_class` is `other`
+  where no class fits.
+- `target_object_id`, `destination_object_id` and `target` are inventory IDs when the inventory
+  lists objects, else the model's plain words (or `none` / `unsure`).
+
+### `episode_metadata` (v1.1)
+
+| column | type | meaning |
+|---|---|---|
+| `has_end_state` | bool? | false when the activity has no object end state (a dance, a wave, a gesture); null without a goal, or when the answer gave neither true nor false |
+| `goal_command` | str? | the goal as a command for training prompts, rendered from the required object end states, such as "Put the pink brick in the transparent box"; empty when none renders; null without a goal |
+| `event_sources` | str? | the run's event sources, comma-joined |
+| `coarse_mode` | str? | `frames` or `video` |
+| `coarse_fps` | float? | the rate of the frames the coarse pass saw: their count minus one, over the seconds from the first to the last; null in `video` mode |
+| `crawl_enabled` | bool? | whether the crawl was on |
+| `crawl_model` | str? | the crawl's model; null when the crawl was off |
+
+`goal_objective` is kept a state sentence (null without a goal): an objective that the state check
+reads as a command (it starts with a known imperative verb, a fixed list in
+`robolabel.layers.goal.is_state_objective`), or an empty one, is replaced by one rendered from the
+required object items ("No object has a required end state." when none renders). The check is a word
+list, so a command that starts with a verb outside it is kept as written.
+
+### `attempt` (v1.1)
+
+Every v1.1 run writes one row per attempt of the segments, with `attempt_source` `vlm`:
+`start_frame` and `end_frame` span the attempt from its first phase to its last, `outcome` is its
+`attempt_outcome` (`success`, `failed` or `aborted`), `failure_type` is that of its failed or
+aborted phase (else `none`), `evident_frame` is the last frame of that phase (null for a
+successful attempt), and `confidence` is 0.5. With the gripper source, the v7 rows measured by L1
+(`attempt_source` `signal`) are written as well.
+
+### `requirement` (v1.1)
+
+Without the gripper source, the L1 record is never read: no robot item is added from it, and the
+robot items are the model's own. With it, a robot item that the model left `required` with
+`achieved` `unknown`, or marked `unsure` / `perception`, takes `achieved` from L1 when L1 decides
+it, with `basis` `signal` (an `unsure` item then becomes `required`).
+
+### `check` (v1.1)
+
+Thirteen rules per episode: rules 1 to 10 as in v7, then 11 (every crawl pick lies inside a window
+the model saw), 12 (no boundary moved by the crawl crosses a neighbouring boundary) and 13
+(`has_end_state` false and no `object_end_state` item). Without the gripper source, rules 1, 2, 6,
+7 and 8 need the signal and are `na`. Rules 11 to 13 count in `label_risk` but never route. A call
+that failed, was refused, was unavailable, was stopped by the spend guard or stayed invalid (and a
+step not run after a stop), or a coarse pass with no output, sets `label_risk` to 1.0 and
+`review_status` to `routed`.
+
+### The view record (v1.1)
+
+`run_episode_v11` returns a view record with the V-lite keys except `candidate_verdicts`, and with
+the v1.1 `pipeline_version` and `pipeline_code`. `step_status` covers the crawl too. Each segment
+gains `end_event`, `coarse_end_frame`, `crawl_calls` and `attempt_outcome`, and `attempts` holds
+one record per attempt of the segments: `attempt_idx`, `start`, `end`, `outcome` (the attempt
+outcome), `failure_type`, `evident_frame` and `source` (`vlm`). New keys:
+
+- `attempts_signal`: L1's own attempts in the same shape (`source` `signal`, L1's outcome words),
+  null without the gripper source;
+- `has_end_state`, `goal_command`, `event_sources` (a list), `coarse_mode`, `coarse_fps`,
+  `crawl_enabled`, `crawl_model` and `crawl_calls` (the episode's total);
+- `events`, the event source's events (below);
+- `crawl_log`, one entry per typed boundary: `boundary_index`, `event_type`, `object` (the object a
+  contact question names), `coarse_frame`, `stage1_frames` and `stage1_answer`, `retry_frames` and
+  `retry_answer`, `stage2_frames` and `stage2_answer`, `pick` (the frame of the image the deciding
+  answer points at), `onset`, `flags`, `calls`, `usd` and `call_log` (per call: `stage`, `frames`,
+  `answer`, `read_as`, `status`, `usd`, `wall_s`, `cache_hit`). The flags are explained
+  [below](#crawl-log-flags-v11);
+- `coarse_status`, `failed_calls`, `camera`, `inventory_frames`, `keyframes`, `keyframe_source`
+  (`boundaries`, or `signal` with the gripper source), `prompt_version` and `prompt_hashes`.
+
+Many view keys say how a label was made: the event and crawl keys (`events`, `event_sources`,
+`crawl_log`, `crawl_enabled`, `crawl_model`, `crawl_calls`), `coarse_mode`, `coarse_fps`,
+`step_status`, `failed_calls`, `keyframe_source`, `attempts_signal`, `checks`, `repairs`,
+`prompt_hashes`, a segment's `boundary_source`, `coarse_end_frame` and `crawl_calls`, a requirement's
+`basis` and `added_by`, and `layer_models_json` in the rows. A blind comparison of setups should
+therefore show only the fields it needs, such as the segments' `start`, `end`, `phase_text`,
+`phase_class`, `target_name`, `destination_name` and `outcome`, and the goal's `objective`, rather
+than hide a list of fields.
+
+### Crawl log flags (v1.1)
+
+| flag | meaning |
+|---|---|
+| `crawl_edge` | stage 1 answered 0 or 9 and no image pick followed: the window could not move, the call cap came first, or the retry did not pick an image (or picked one that contradicts stage 1). The onset that the edge answer supports is kept (the retry's, when it gave the same edge), or the coarse frame with `crawl_none` when that onset lies outside the clip |
+| `crawl_none` | stage 1 answered -1, or an edge answer put the onset at frame 0 or past the last frame (the event is not inside the clip); the coarse frame stays |
+| `crawl_inconsistent` | a later answer contradicts stage 1 (a retry pick against its edge, a retry at the opposite edge, or a 0 or 9 in stage 2); the stage-1 result is kept |
+| `crawl_cross` | the refined onset would cross a neighbouring boundary; the coarse frame stays |
+| `crawl_failed` | a crawl call failed or its answer was outside the allowed set; the frame known at that point is kept |
+| `crawl_call_cap` | the per-boundary call cap was reached before the retry or stage 2; the result so far is kept |
+| `skipped_type` | not crawled: the boundary's type is in `skip_types` |
+| `skipped_signal` | not crawled: the boundary took the L1 frame (`boundary_source` `signal`) |
+| `skipped_stopped` | not crawled: the spend guard had stopped paid calls |
+| `skipped_cap` | not crawled: the episode's 12 crawled boundaries were already used |
+| `skipped_short` | not crawled: the clip has fewer than 3 frames |
+
+### Events and the L1 record (v1.1)
+
+An event is `{"type", "frame", "confidence", "source", "attempt_idx"}`: `frame` is the onset (the
+first frame of what the event starts), `confidence` a float from 0 to 1 (4 decimals) and
+`attempt_idx` an int or null. Types by source: `gripper` gives `close_start`, `open_start` and
+`arm_move`; `gripper_recovery` (a label of the gripper source) gives `open_start` and `back_off`;
+`motion` gives `pause_start` and `pause_end`; `none` gives none.
+
+The L1 record (`robolabel.layers.signal.run_l1`) gains `recovery_candidates`, a list of
+`{"type", "frame", "confidence", "attempt_idx"}`. After an `empty` or `aborted` close whose fingers
+open again it holds an `open_start` (confidence `high`) at the reopening onset minus 1 and, when
+the arm then starts moving away from its pose at the close, a `back_off` (confidence `low`), both
+with the failed attempt's index. Frames follow the L1 candidate convention (a candidate frame ends
+the earlier segment). `recovery_version` names the rule. Every other L1 field, and `code_version`,
+is unchanged.
+
+### `attempt_outcome` in older files and in gold
+
+A file or gold record without `attempt_outcome` gets it derived by the old rule
+(`robolabel.eval.derive_attempt_outcome`): the phases that share an `attempt_idx` are one attempt,
+which is `failed` when any of them failed or has `mistake` true, else `aborted` when one was
+aborted, else `success`; a segment without `attempt_idx` is an attempt of its own. Present values
+are kept. Gold v2 segments (`robolabel.eval.gold_v2`) take an optional `attempt_outcome`; files
+without it still validate, and `with_attempt_outcome` derives it.
 
 ## Gold file (human labels)
 
