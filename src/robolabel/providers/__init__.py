@@ -1,6 +1,6 @@
 """VLM providers. Each concrete provider is one self-registering module.
 
-Importing this package registers the built-in providers (mock, gemini, openai,
+Importing this package registers the built-in providers (mock, gemini, openai, openrouter,
 and — if its heavy deps import — qwen). Use :func:`build_provider` to construct
 one by name.
 """
@@ -8,7 +8,7 @@ one by name.
 from __future__ import annotations
 
 # Always-available providers self-register on import.
-from . import gemini, mock, openai  # noqa: E402,F401
+from . import gemini, mock, openai, openrouter  # noqa: E402,F401
 from .base import (
     MissingCredentialError,
     ProviderResponse,

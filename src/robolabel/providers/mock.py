@@ -50,6 +50,36 @@ class MockProvider(VLMProvider):
         return ProviderResponse(answer, raw, self.name, self.model, time.perf_counter() - t0, 0.0)
 
 
+    def call(self, request):
+        """Schema v7 multi-part call: a deterministic, schema-valid placeholder answer (no network, $0)."""
+        from .base import CallResult
+
+        data = _from_schema(request.schema)
+        text = json.dumps(data, sort_keys=True)
+        receipt = {"provider": self.name, "model": self.model, "step": request.step, "status": "ok",
+                   "usd": 0.0, "cache_hit": False, "warning": "MOCK OUTPUT, semantically meaningless."}
+        return CallResult(True, data, text, "ok", mode="mock", finish_reason="stop", usd=0.0, latency_s=0.0,
+                          wall_s=0.0, attempts=1, receipt=receipt)
+
+
+def _from_schema(schema: dict):
+    """Smallest value that satisfies a v7 schema: first enum value, one array item, zeros, 'mock'."""
+    t = schema.get("type")
+    if "enum" in schema:
+        return schema["enum"][0]
+    if t == "object":
+        return {k: _from_schema(v) for k, v in schema.get("properties", {}).items()}
+    if t == "array":
+        return [_from_schema(schema.get("items", {}))]
+    if t == "integer":
+        return 0
+    if t == "number":
+        return 0.5
+    if t == "boolean":
+        return True
+    return "mock"
+
+
 _MOCK_PHASES = ["approach", "grasp", "transport", "retract"]
 
 

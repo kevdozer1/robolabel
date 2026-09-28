@@ -1,0 +1,17 @@
+These images are the first frame of one robot episode, one image per camera: {camera_list}.
+The dataset's task description is: "{task}".
+
+List the objects in the scene that matter for labeling this episode:
+- every object the task description names or implies,
+- every object the robot might touch,
+- every look-alike: any object of the same kind, or with a similar color or shape, as an object the task names.
+List at most 10 objects.
+
+For each object give:
+- object_id: o1, o2, o3 ... in the order you list them;
+- name: a name that picks out this one object in this scene, for example "left black bowl" or "red block near the tray";
+- aliases: other short names a person might use;
+- category: one of block, container, bowl, plate, bottle, tool, control, cloth, other;
+- views: one entry per camera listed above. visible is true when the object can be seen in that camera. When visible,
+  x and y are a point on the object and x0, y0, x1, y1 its box, all as fractions of the image width and height
+  (0 is left or top, 1 is right or bottom). When not visible, set visible to false and all six numbers to 0.

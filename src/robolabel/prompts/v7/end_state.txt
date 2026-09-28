@@ -1,0 +1,13 @@
+These images are the last frame of one robot episode, one image per camera: {camera_list}.
+The dataset's task description is: "{task}".
+
+The target is the object the task is about ({target_hint}); the destination is where the task says it
+should end up ({destination_hint}). Looking only at these images, answer each question with true, false
+or unsure:
+- target_inside_destination: the target is inside the destination;
+- target_on_top_of_destination: the target rests on top of the destination;
+- target_touching_destination: the target touches the destination;
+- target_lifted: the target is off the table or support it started on, held in the air;
+- robot_holding_object: an object is between the robot's fingers;
+- gripper_near_target: the gripper is at or just above the target.
+Also give target_name and destination_name as you see them.

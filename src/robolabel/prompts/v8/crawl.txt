@@ -1,0 +1,20 @@
+=== questions ===
+close_start: the fingers (gripper or hand) have started to close
+open_start: the fingers have started to open
+contact_start: the hand or the tool touches the {object}
+contact_end: the hand or the tool no longer touches the {object}
+=== phases ===
+The moment asked about is where the phase "{before}" ends and the phase "{after}" begins.
+=== before_images ===
+The {n} images below are frames of one video in time order, all from camera {camera}. The line before each image
+gives its number and its frame. {phases}
+
+Which of these frames is the first where {question}?
+
+Reply with one integer as "answer":
+- 2 to {n}: image k is the first image that shows it (so it began between image k-1 and image k);
+- 0: image 1 already shows it;
+- 9: the fingers, hand or tool are visible and it has not begun by image {n};
+- -1: it cannot be judged in these images (the fingers, hand, tool or object are not visible).
+=== after_images ===
+Which of these {n} images is the first where {question}? Reply 2 to {n}, 0, 9 or -1 as described above.

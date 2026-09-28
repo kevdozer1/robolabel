@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "robolabel gold v2 family file",
+  "description": "One gold v2 file per family (MEASUREMENT_SPEC 3.2). Structure and enums only; the semantic rules (contiguous segments, object references, unsure_kind iff unsure, episode_key) are checked by robolabel.eval.gold_v2.validate_gold. A segment's optional attempt_outcome (SPEC_V1_1 4) is the result of its whole attempt; readers derive it when absent (robolabel.eval.gold_v2.with_attempt_outcome).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "family", "guide_version", "episodes"],
+  "properties": {
+    "schema_version": {"const": "robolabel/gold/v2"},
+    "family": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$"},
+    "dataset": {"$ref": "#/$defs/dataset"},
+    "guide_version": {"type": "string"},
+    "episodes": {"type": "array", "items": {"$ref": "#/$defs/episode"}},
+    "notes": {"type": "string"}
+  },
+  "$defs": {
+    "frame": {"type": "integer", "minimum": 0},
+    "frame_or_null": {"type": ["integer", "null"], "minimum": 0},
+    "object_id": {"type": "string", "pattern": "^o[0-9]+$"},
+    "ref_or_null": {"type": ["string", "null"], "minLength": 1},
+    "camera": {"type": "string", "minLength": 1},
+    "camera_or_null": {"type": ["string", "null"], "minLength": 1},
+    "phase_class_or_null": {
+      "enum": ["approach", "grasp", "transport", "release", "retract", "press", "pour", "insert", "fold",
+               "wipe", "push", "pull", "rotate", "open", "close", "other", null]
+    },
+    "outcome": {"enum": ["success", "failed", "aborted"]},
+    "failure_type_or_null": {
+      "enum": ["missed_grasp", "slip", "drop", "wrong_object", "misplace", "press_no_effect", "aborted",
+               "other", null]
+    },
+    "end_boundary_quality_or_null": {"enum": ["sharp", "fuzzy", "occluded", null]},
+    "predicate": {
+      "enum": ["inside", "on_top_of", "touching", "in_gripper", "lifted", "at_location", "unchanged",
+               "activated", "state", "holding", "gripper_open", "gripper_closed", "withdrawn",
+               "at_home_pose", "near_object", "tool_lifted", "other"]
+    },
+    "visibility_class": {"enum": ["visible", "partial", "not_visible"]},
+    "dataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo_id"],
+      "properties": {
+        "repo_id": {"type": "string", "minLength": 1},
+        "revision": {"type": ["string", "null"]},
+        "fps": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "first_frame_point": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["camera", "xy"],
+      "properties": {
+        "camera": {"$ref": "#/$defs/camera"},
+        "xy": {
+          "type": "array",
+          "prefixItems": [
+            {"type": "number", "minimum": 0, "maximum": 1},
+            {"type": "number", "minimum": 0, "maximum": 1}
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        }
+      }
+    },
+    "object": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object_id", "name", "aliases", "category"],
+      "properties": {
+        "object_id": {"$ref": "#/$defs/object_id"},
+        "name": {"type": "string", "minLength": 1},
+        "aliases": {"type": "array", "items": {"type": "string"}},
+        "category": {
+          "enum": ["block", "container", "bowl", "plate", "bottle", "tool", "control", "cloth", "other"]
+        },
+        "first_frame_point": {"$ref": "#/$defs/first_frame_point"},
+        "notes": {"type": "string"}
+      }
+    },
+    "segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["segment_idx", "start_frame", "end_frame", "phase_class", "phase_text", "target",
+                   "destination", "attempt_idx", "outcome", "failure_type", "end_boundary_quality"],
+      "properties": {
+        "segment_idx": {"type": "integer", "minimum": 0},
+        "start_frame": {"$ref": "#/$defs/frame"},
+        "end_frame": {"$ref": "#/$defs/frame"},
+        "phase_class": {"$ref": "#/$defs/phase_class_or_null"},
+        "phase_text": {"type": "string"},
+        "target": {"$ref": "#/$defs/ref_or_null"},
+        "destination": {"$ref": "#/$defs/ref_or_null"},
+        "attempt_idx": {"type": "integer", "minimum": 1},
+        "outcome": {"$ref": "#/$defs/outcome"},
+        "attempt_outcome": {"$ref": "#/$defs/outcome"},
+        "failure_type": {"$ref": "#/$defs/failure_type_or_null"},
+        "end_boundary_quality": {"$ref": "#/$defs/end_boundary_quality_or_null"},
+        "coarse_idx": {"type": ["integer", "null"], "minimum": 0},
+        "notes": {"type": "string"}
+      }
+    },
+    "coarse_subtask": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coarse_idx", "start_frame", "end_frame", "text", "target", "destination", "mistake"],
+      "properties": {
+        "coarse_idx": {"type": "integer", "minimum": 0},
+        "start_frame": {"$ref": "#/$defs/frame"},
+        "end_frame": {"$ref": "#/$defs/frame"},
+        "text": {"type": "string"},
+        "target": {"$ref": "#/$defs/ref_or_null"},
+        "destination": {"$ref": "#/$defs/ref_or_null"},
+        "mistake": {"type": "boolean"},
+        "phase_classes": {"type": "array", "items": {"type": "string"}},
+        "segment_indices": {"type": "array", "items": {"type": "integer", "minimum": 0}},
+        "notes": {"type": "string"}
+      }
+    },
+    "failed_attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["span", "failure_type", "object", "evident_frame", "evident_camera", "recovery_start"],
+      "properties": {
+        "span": {
+          "type": "array",
+          "prefixItems": [{"$ref": "#/$defs/frame"}, {"$ref": "#/$defs/frame"}],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "failure_type": {"$ref": "#/$defs/failure_type_or_null"},
+        "object": {"$ref": "#/$defs/ref_or_null"},
+        "evident_frame": {"$ref": "#/$defs/frame_or_null"},
+        "evident_camera": {"$ref": "#/$defs/camera_or_null"},
+        "recovery_start": {"$ref": "#/$defs/frame_or_null"},
+        "notes": {"type": "string"}
+      }
+    },
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["req_id", "kind", "object", "predicate", "ref_object", "value", "status", "unsure_kind",
+                   "basis", "achieved", "deciding_frame", "deciding_camera", "visibility", "reason"],
+      "properties": {
+        "req_id": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["object_end_state", "robot_end_state"]},
+        "object": {"$ref": "#/$defs/ref_or_null"},
+        "predicate": {"$ref": "#/$defs/predicate"},
+        "ref_object": {"$ref": "#/$defs/ref_or_null"},
+        "value": {"type": ["boolean", "string", "null"]},
+        "status": {"enum": ["required", "incidental", "unsure"]},
+        "unsure_kind": {"enum": ["perception", "intent", null]},
+        "basis": {"enum": ["task_string", "physical_necessity", "family_convention", "observed"]},
+        "achieved": {"enum": [true, false, "unknown"]},
+        "deciding_frame": {"$ref": "#/$defs/frame_or_null"},
+        "deciding_camera": {"$ref": "#/$defs/camera_or_null"},
+        "visibility": {
+          "type": "object",
+          "propertyNames": {"minLength": 1},
+          "additionalProperties": {"$ref": "#/$defs/visibility_class"}
+        },
+        "reason": {"type": "string"},
+        "text": {"type": "string"},
+        "notes": {"type": "string"}
+      }
+    },
+    "goal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["objective_text", "requirements"],
+      "properties": {
+        "objective_text": {"type": "string"},
+        "requirements": {"type": "array", "items": {"$ref": "#/$defs/requirement"}},
+        "notes": {"type": "string"}
+      }
+    },
+    "episode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["episode_key", "episode_index", "split", "pass", "num_frames", "cameras", "task_string",
+                   "objects", "primary_target", "primary_destination", "segments", "failed_attempts",
+                   "goal", "episode_outcome", "hard_tags"],
+      "properties": {
+        "episode_key": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[0-9]+$"},
+        "episode_index": {"type": "integer", "minimum": 0},
+        "split": {"enum": ["dev", "heldout"]},
+        "pass": {"type": "integer", "minimum": 1},
+        "annotator_id": {"type": "string"},
+        "blind": {"type": "boolean"},
+        "tool": {"type": "string"},
+        "active_seconds": {"type": "number", "minimum": 0},
+        "num_frames": {"type": "integer", "minimum": 1},
+        "cameras": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/camera"},
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "task_string": {"type": "string"},
+        "objects": {"type": "array", "items": {"$ref": "#/$defs/object"}},
+        "primary_target": {"$ref": "#/$defs/ref_or_null"},
+        "primary_destination": {"$ref": "#/$defs/ref_or_null"},
+        "segments": {"type": "array", "items": {"$ref": "#/$defs/segment"}, "minItems": 1},
+        "coarse_subtasks": {"type": "array", "items": {"$ref": "#/$defs/coarse_subtask"}},
+        "failed_attempts": {"type": "array", "items": {"$ref": "#/$defs/failed_attempt"}},
+        "goal": {"$ref": "#/$defs/goal"},
+        "episode_outcome": {"enum": ["success", "partial", "failure", "unknown"]},
+        "quality": {"type": ["integer", "null"], "enum": [1, 2, 3, 4, 5, null]},
+        "hard_tags": {
+          "type": "array",
+          "items": {
+            "enum": ["distractor", "failed_attempt", "hidden_ending", "long_multistep", "ambiguous_task_string"]
+          },
+          "uniqueItems": true
+        },
+        "notes": {"type": "string"}
+      }
+    }
+  }
+}

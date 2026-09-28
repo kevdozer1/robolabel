@@ -1,0 +1,14 @@
+These are demonstrations of one task: "{task}". The images show the first and the last frame of {n_exemplars}
+example episodes; the line before each image names it.
+
+Across {n_successful} successful demonstrations, this is how often each end-of-episode fact holds (counted
+from robot measurements and last-frame scene facts; target and destination are the task's object and
+where it should end up):
+{table}
+
+Write:
+- objective_text: one plain sentence stating the intended end state, with state words (inside, on top
+  of, activated), never motion words;
+- missed_predicates: end-of-episode facts that matter for this task but are not in the table (at most 5;
+  an empty list if none), each with a short reason.
+Do not change how often a fact holds, and do not call a fact required that the table does not support.

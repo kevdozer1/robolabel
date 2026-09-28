@@ -1,0 +1,29 @@
+Label the phases of one robot episode of {num_frames} frames ({duration} s at {fps} frames per second). The images
+below are frames from it; the line before each image gives its frame number, time and camera.
+The dataset's task description is: "{task}".
+
+Objects in the scene (use these IDs):
+{inventory_lines}
+
+Gripper events measured by the robot itself:
+{candidate_lines}
+{attempt_lines}
+
+Split the whole episode, from frame 0 to frame {last_frame}, into consecutive segments that do not overlap. Each
+segment is one phase of what the robot does. phase_class is one of: approach, grasp, transport, release, retract,
+press, pour, insert, fold, wipe, push, pull, rotate, open, close, other. phase_text is a short plain instruction that
+names the object, for example "close on the red block".
+
+Rules:
+- The candidate frames above come from the robot's own gripper measurements and are exact. Keep them as segment
+  boundaries unless the images clearly contradict them. A segment that ends at a candidate's boundary frame has
+  boundary_source "signal" and that candidate_id; any other segment has boundary_source "vlm" and candidate_id "none".
+- Add a boundary only where the images show an event the list lacks.
+- There is no minimum number of segments.
+- A retry is a new attempt with a higher attempt_idx, not a repeated phase. The phases of an attempt that failed get
+  outcome "failed" and a failure_type (missed_grasp, slip, drop, wrong_object, misplace, press_no_effect, aborted,
+  other); every other phase gets outcome "success" and failure_type "none".
+- target is the ID of the object the phase acts on and destination the ID of where it is moved to. Use "unsure" if the
+  images do not show which object, and "none" when there is no such object.
+- Give at most 3 evidence items per segment: a frame and camera shown above and a short statement of what is visible.
+- For every candidate in the list, give a verdict: confirm or reject, with a short note.

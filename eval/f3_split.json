@@ -1,0 +1,339 @@
+{
+ "created": "2026-09-27",
+ "dev": [
+  "F3/308",
+  "F3/359",
+  "F3/371",
+  "F3/375",
+  "F3/422",
+  "F3/443",
+  "F3/513",
+  "F3/524",
+  "F3/529",
+  "F3/544",
+  "F3/548",
+  "F3/562",
+  "F3/566",
+  "F3/589",
+  "F3/597",
+  "F3/1601",
+  "F3/1604",
+  "F3/1621",
+  "F3/1668",
+  "F3/1680",
+  "F3/1708",
+  "F3/1722",
+  "F3/1724",
+  "F3/1780",
+  "F3/1821",
+  "F3/1823",
+  "F3/1841",
+  "F3/1845",
+  "F3/1868",
+  "F3/1876"
+ ],
+ "family": "F3",
+ "heldout": [
+  "F3/339",
+  "F3/370",
+  "F3/386",
+  "F3/401",
+  "F3/410",
+  "F3/417",
+  "F3/466",
+  "F3/476",
+  "F3/484",
+  "F3/515",
+  "F3/526",
+  "F3/560",
+  "F3/572",
+  "F3/578",
+  "F3/582",
+  "F3/1622",
+  "F3/1645",
+  "F3/1651",
+  "F3/1671",
+  "F3/1676",
+  "F3/1690",
+  "F3/1729",
+  "F3/1736",
+  "F3/1760",
+  "F3/1761",
+  "F3/1792",
+  "F3/1839",
+  "F3/1851",
+  "F3/1857",
+  "F3/1861"
+ ],
+ "repo_id": "armnet/armnetbench_v01_lerobot_so101",
+ "revision": "2e5e89aee0e7f081078d9d6ab3b279fc4b83ea84",
+ "rng": "a fresh numpy.random.default_rng(20261001) created immediately before each shuffle (one generator per shuffle, never shared); shuffle with rng.permutation over the sorted list",
+ "rule": "for each task and stratum (teleoperated successful 8, policy failure 14, policy successful 8, suboptimal fills a short successful stratum) sort by episode_index, shuffle, take the first n; dev = the first half of those n in shuffled order (4, 7, 4), held-out = the second half. Episodes of the task that were not selected belong to neither split (spec 8.2 uses them).",
+ "schema_version": "robolabel/split/v1",
+ "seed": 20261001,
+ "strata_definition": {
+  "policy_failure": "policy_type != teleoperated and success_class == failure",
+  "policy_successful": "policy_type != teleoperated and success_class == successful (suboptimal fills a short stratum)",
+  "teleoperated_successful": "policy_type == teleoperated and success_class == successful"
+ },
+ "tasks": {
+  "block_stack": {
+   "dev": [
+    562,
+    566,
+    589,
+    597,
+    544,
+    443,
+    359,
+    422,
+    371,
+    375,
+    308,
+    548,
+    513,
+    524,
+    529
+   ],
+   "heldout": [
+    578,
+    560,
+    582,
+    572,
+    339,
+    484,
+    386,
+    401,
+    410,
+    515,
+    417,
+    476,
+    466,
+    526,
+    370
+   ],
+   "strata": {
+    "policy_failure": {
+     "available": 218,
+     "dev": [
+      544,
+      443,
+      359,
+      422,
+      371,
+      375,
+      308
+     ],
+     "filled_from_suboptimal": [],
+     "heldout": [
+      339,
+      484,
+      386,
+      401,
+      410,
+      515,
+      417
+     ],
+     "selected_in_order": [
+      544,
+      443,
+      359,
+      422,
+      371,
+      375,
+      308,
+      339,
+      484,
+      386,
+      401,
+      410,
+      515,
+      417
+     ]
+    },
+    "policy_successful": {
+     "available": 37,
+     "dev": [
+      548,
+      513,
+      524,
+      529
+     ],
+     "filled_from_suboptimal": [],
+     "heldout": [
+      476,
+      466,
+      526,
+      370
+     ],
+     "selected_in_order": [
+      548,
+      513,
+      524,
+      529,
+      476,
+      466,
+      526,
+      370
+     ]
+    },
+    "teleoperated_successful": {
+     "available": 50,
+     "dev": [
+      562,
+      566,
+      589,
+      597
+     ],
+     "filled_from_suboptimal": [],
+     "heldout": [
+      578,
+      560,
+      582,
+      572
+     ],
+     "selected_in_order": [
+      562,
+      566,
+      589,
+      597,
+      578,
+      560,
+      582,
+      572
+     ]
+    }
+   },
+   "task_string": "Stack the colouful blocks on top of each other"
+  },
+  "eye_drops_to_basket": {
+   "dev": [
+    1841,
+    1845,
+    1868,
+    1876,
+    1823,
+    1680,
+    1722,
+    1601,
+    1708,
+    1621,
+    1668,
+    1821,
+    1724,
+    1780,
+    1604
+   ],
+   "heldout": [
+    1857,
+    1839,
+    1861,
+    1851,
+    1690,
+    1645,
+    1761,
+    1651,
+    1792,
+    1729,
+    1671,
+    1760,
+    1622,
+    1676,
+    1736
+   ],
+   "strata": {
+    "policy_failure": {
+     "available": 120,
+     "dev": [
+      1823,
+      1680,
+      1722,
+      1601,
+      1708,
+      1621,
+      1668
+     ],
+     "filled_from_suboptimal": [],
+     "heldout": [
+      1690,
+      1645,
+      1761,
+      1651,
+      1792,
+      1729,
+      1671
+     ],
+     "selected_in_order": [
+      1823,
+      1680,
+      1722,
+      1601,
+      1708,
+      1621,
+      1668,
+      1690,
+      1645,
+      1761,
+      1651,
+      1792,
+      1729,
+      1671
+     ]
+    },
+    "policy_successful": {
+     "available": 120,
+     "dev": [
+      1821,
+      1724,
+      1780,
+      1604
+     ],
+     "filled_from_suboptimal": [],
+     "heldout": [
+      1760,
+      1622,
+      1676,
+      1736
+     ],
+     "selected_in_order": [
+      1821,
+      1724,
+      1780,
+      1604,
+      1760,
+      1622,
+      1676,
+      1736
+     ]
+    },
+    "teleoperated_successful": {
+     "available": 50,
+     "dev": [
+      1841,
+      1845,
+      1868,
+      1876
+     ],
+     "filled_from_suboptimal": [],
+     "heldout": [
+      1857,
+      1839,
+      1861,
+      1851
+     ],
+     "selected_in_order": [
+      1841,
+      1845,
+      1868,
+      1876,
+      1857,
+      1839,
+      1861,
+      1851
+     ]
+    }
+   },
+   "task_string": "Put the eye drops into the basket"
+  }
+ }
+}
