@@ -34,24 +34,6 @@ vision-language models through OpenRouter and writes a parquet file.
   </tr>
 </table>
 
-Under each clip:
-
-- a timeline of the labeled phases with a playhead. Color is the phase class; red is the release
-  class, not failure.
-- the current phase's label in the model's words, in a box of the phase's color. The box is filled
-  light red when that phase failed.
-- `Goal:` the command rendered from the goal's end states by fixed templates, so it can read
-  awkwardly ("Set the white plate under the bowl to clean"). The T-shirt clip shows its end-state
-  sentence because its one requirement was marked unsure.
-- the pipeline's wall time and API cost on the clip.
-
-No robot signal was used. The model saw each whole clip at up to 2 frames per second, at most 48
-frames, so the 30 s clips got about 1.6 per second. The two robot clips also got their dataset's
-one-line task text. The human clips got none, but the dishes video has on-screen step titles the
-model could read. Each figure is the top-rated of six models' outputs on that clip, so these are
-examples, not a benchmark. Boundary accuracy has been measured on robot-arm episodes only
-([results](#results-and-limits)).
-
 Clips: ArmnetBench v0.1 and Unitree G1_Dex3_ToastedBread_Dataset (Apache-2.0), Eidon Tracker POV
 (CC BY 4.0), "Washing Dishes" by Leet289 (CC BY-SA 4.0; that figure is shared under the same
 license). Full credits are under [License and credits](#license-and-credits).
@@ -76,10 +58,11 @@ signals" is an earlier blind round on 4 SO-101 episodes in which the model also 
 gripper signal. "My ranking" weights the two 70/30: a qualitative blend, not a statistic. Cost is the
 whole pipeline's API cost for one clip at OpenRouter list prices on 2026-09-27. Time is the job's wall
 time, rough because other jobs ran at the same time. Each run used one model for every step, with
-`reasoning={"effort": "low", "exclude": True}`.
+`reasoning={"effort": "low", "exclude": True}`. 
 
 The blended scores span 2.42 to 3.08, and every model gave unusable labels on at least two of the six
-clips. Median cost runs from $0.006 to $0.522 per clip, a factor of more than 80.
+clips. Median cost runs from $0.006 to $0.522 per clip, a factor of more than 80. My personal ranking
+does not factor in cost.
 
 ## Try it
 
