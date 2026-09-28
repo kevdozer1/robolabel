@@ -9,27 +9,17 @@ vision-language models through OpenRouter and writes a parquet file.
   <tr>
     <td width="50%" valign="top">
       <a href="docs/figures/v11_robot_arm.webp"><img src="docs/figures/v11_robot_arm.webp" width="100%" alt="SO-101 arm putting eye drops in a basket. Under the clip, a timeline of labeled phases; the label box turns light red on the two failed grasps."></a><br>
-      SO-101 arm, task text "Put the eye drops into the basket" (23.7 s). The first two of three
-      grasps fail.<br>
-      Gemini 3.8 Flash, 2 min 20 s, $0.164
     </td>
     <td width="50%" valign="top">
       <a href="docs/figures/v11_humanoid.webp"><img src="docs/figures/v11_humanoid.webp" width="100%" alt="Unitree G1 humanoid with dexterous hands putting a slice of bread in a toaster and pressing the lever, with its phase timeline and current label."></a><br>
-      Unitree G1 humanoid with dexterous hands puts bread in a toaster, then presses the lever
-      (20.7 s). The first grasp fails.<br>
-      Claude Opus 5.5, 1 min 22 s, $0.263
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <a href="docs/figures/v11_egocentric.webp"><img src="docs/figures/v11_egocentric.webp" width="100%" alt="Head-mounted camera view of a person folding a white T-shirt, with its phase timeline and current label."></a><br>
-      Head-mounted camera: a person folds a T-shirt (30 s).<br>
-      GPT-6 Sol, 35 s, $0.060
     </td>
     <td width="50%" valign="top">
       <a href="docs/figures/v11_third_person.webp"><img src="docs/figures/v11_third_person.webp" width="100%" alt="Close third-person view of hands washing dishes, with the phase timeline and current label."></a><br>
-      Close third-person view: hands wash dishes (30 s).<br>
-      GPT-6 Sol, 1 min 28 s, $0.121
     </td>
   </tr>
 </table>
