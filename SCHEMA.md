@@ -123,7 +123,7 @@ counts.
 
 Schema version: **`robolabel/annotations/v7`**. Only the experimental pipelines write it:
 V-lite (`robolabel.schema_v7.write_v7` on the rows that `robolabel.vlite.run_episode`
-returns; see the README), and v1.1 with the additions described
+returns; see [CONFIG.md](CONFIG.md#v-lite-experimental)), and v1.1 with the additions described
 [below](#v11-additions-video-first-experimental). `robolabel run`, `annotate` and `demo` still
 write v6.
 

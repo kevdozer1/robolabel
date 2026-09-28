@@ -77,18 +77,18 @@ run:
 ## V-lite (experimental)
 
 V-lite adds no subcommands, run-config keys or options: the experimental V-lite pipeline (schema v7)
-has no CLI subcommand yet. It is called from Python, and its spend guard and response cache are set
-up there. See the README section
-[Experimental: V-lite pipeline](README.md#experimental-v-lite-pipeline).
+has no CLI subcommand yet. It is called from Python (`robolabel.vlite.run_episode`), with the spend
+guard and response cache set up as in the README's
+[Spend guard and cache](README.md#spend-guard-and-cache). Its output is described in
+[SCHEMA.md](SCHEMA.md#v7-v-lite-output-experimental).
 
 ## v1.1 video first (experimental)
 
 v1.1 adds no subcommand, run-config key, CLI option, dependency or extra: `robolabel --help` and the
 run config are as before. Like V-lite it is called from Python, and its options are keyword
 arguments. The pipeline itself runs on the core dependencies; the clip-folder adapter needs the
-`video` extra (PyAV, decode only), and scoring needs the `eval` extra, as for V-lite. See the README
-section
-[Experimental: video first (v1.1)](README.md#experimental-video-first-v11).
+`video` extra (PyAV, decode only), and scoring needs the `eval` extra, as for V-lite. See
+[How it works](README.md#how-it-works) in the README.
 
 ### `robolabel.vfirst.run_episode_v11(episode, *, camera, caller, context, ...)`
 
